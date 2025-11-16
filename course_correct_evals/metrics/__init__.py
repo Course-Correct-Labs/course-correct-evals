@@ -9,6 +9,7 @@ from .information_change import (
     delta_i_embedding,
     ngram_novelty,
     analyze_sequence,
+    analyze_dataframe_sequences,
 )
 
 from .semantic_compression import (
@@ -21,16 +22,23 @@ from .semantic_compression import (
 from .persistence import (
     calculate_persistence_rate,
     detect_fabrication_propagation,
+    calculate_intervention_effectiveness,
 )
 
 from .session_contamination import (
     classify_response_type,
     detect_contamination,
+    classify_responses_dataframe,
+    detect_contamination_dataframe,
+    analyze_contamination_spread,
+    calculate_refusal_rates,
 )
 
 from .percolation import (
     analyze_echo_metrics,
     detect_threshold_crossing,
+    calculate_convergence_statistics,
+    analyze_metric_trajectories,
 )
 
 __all__ = [
@@ -39,6 +47,7 @@ __all__ = [
     "delta_i_embedding",
     "ngram_novelty",
     "analyze_sequence",
+    "analyze_dataframe_sequences",
     # Semantic compression
     "word_count",
     "concreteness_score",
@@ -47,10 +56,17 @@ __all__ = [
     # Persistence
     "calculate_persistence_rate",
     "detect_fabrication_propagation",
+    "calculate_intervention_effectiveness",
     # Session contamination
     "classify_response_type",
     "detect_contamination",
+    "classify_responses_dataframe",
+    "detect_contamination_dataframe",
+    "analyze_contamination_spread",
+    "calculate_refusal_rates",
     # Percolation
     "analyze_echo_metrics",
     "detect_threshold_crossing",
+    "calculate_convergence_statistics",
+    "analyze_metric_trajectories",
 ]
