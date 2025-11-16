@@ -320,3 +320,40 @@ class TestRealWorldSchemas:
 
         assert df is None, "Should return None for nonexistent file"
         assert importer.data_source == "not_loaded"
+
+    def test_confabulation_aggregate_mode(self):
+        """Test ConfabulationImporter with aggregate summary data"""
+        # Simulate summary_by_model_arm.csv structure
+        data = pd.DataFrame({
+            'model': ['model_a', 'model_a', 'model_b', 'model_b'],
+            'arm': ['baseline', 'fact_table', 'baseline', 'belief_audit'],
+            'n': [10, 10, 10, 10],
+            'confab_rate': [1.0, 0.9, 1.0, 1.0],
+            'persist_rate': [0.7, 0.9, 0.3, 0.8],
+            'confab_ci': ['[x,y]', '[x,y]', '[x,y]', '[x,y]'],
+            'persist_ci': ['[x,y]', '[x,y]', '[x,y]', '[x,y]'],
+        })
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_path = f.name
+
+        try:
+            importer = ConfabulationImporter(data_path=temp_path)
+            summary = importer.load_data()
+
+            assert summary is not None, "Should load aggregate data"
+            assert 'model' in summary.columns
+            assert 'confab_persistence_rate' in summary.columns
+
+            # Should have one row per model
+            assert len(summary) == 2  # model_a and model_b
+
+            # Verify persistence rate is averaged across arms
+            model_a_rate = summary[summary['model'] == 'model_a']['confab_persistence_rate'].iloc[0]
+            assert abs(model_a_rate - 0.8) < 0.01  # (0.7 + 0.9) / 2 = 0.8
+
+            model_b_rate = summary[summary['model'] == 'model_b']['confab_persistence_rate'].iloc[0]
+            assert abs(model_b_rate - 0.55) < 0.01  # (0.3 + 0.8) / 2 = 0.55
+        finally:
+            os.unlink(temp_path)

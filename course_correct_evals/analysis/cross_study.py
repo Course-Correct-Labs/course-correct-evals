@@ -238,33 +238,57 @@ class CrossStudyAnalysis:
         return self.mirror_loop_analysis
 
     def analyze_confabulation(self) -> Dict[str, Any]:
-        """Analyze Recursive Confabulation study data."""
+        """Analyze Recursive Confabulation study data.
+
+        Note: RC data is now aggregate (per-model summary), not per-conversation.
+        This method returns summary statistics from the published aggregate data.
+        """
         if not self._data_loaded['confabulation']:
             return {"error": "Confabulation data not loaded"}
 
         print("\nAnalyzing Recursive Confabulation study...")
 
-        # Calculate persistence rates
-        persistence_stats = calculate_persistence_rate(self.confabulation_data)
+        # Check if this is aggregate data
+        if 'confab_persistence_rate' in self.confabulation_data.columns:
+            # Aggregate mode: summarize from pre-computed metrics
+            mean_persistence = self.confabulation_data['confab_persistence_rate'].mean()
+            mean_confab = self.confabulation_data.get('confab_rate', pd.Series([None])).mean()
 
-        # Intervention effectiveness
-        if 'intervention_arm' in self.confabulation_data.columns:
-            intervention_stats = calculate_intervention_effectiveness(
-                self.confabulation_data,
-                baseline_name='baseline'
-            )
+            self.confabulation_analysis = {
+                'data_type': 'aggregate',
+                'num_models': len(self.confabulation_data),
+                'models': sorted(self.confabulation_data['model'].tolist()),
+                'mean_persistence_rate': float(mean_persistence),
+                'mean_confab_rate': float(mean_confab) if pd.notna(mean_confab) else None,
+                'persistence_by_model': self.confabulation_data[['model', 'confab_persistence_rate']].to_dict('records'),
+            }
+
+            print(f"✓ Aggregate data: {len(self.confabulation_data)} models")
+            print(f"  Mean persistence rate: {mean_persistence:.1%}")
+
         else:
-            intervention_stats = None
+            # Legacy mode: per-conversation data (if someone provides it locally)
+            persistence_stats = calculate_persistence_rate(self.confabulation_data)
 
-        self.confabulation_analysis = {
-            'persistence_statistics': persistence_stats,
-            'intervention_effectiveness': intervention_stats,
-            'total_conversations': self.confabulation_data['conversation_id'].nunique(),
-            'total_turns': len(self.confabulation_data),
-        }
+            # Intervention effectiveness
+            if 'intervention_arm' in self.confabulation_data.columns:
+                intervention_stats = calculate_intervention_effectiveness(
+                    self.confabulation_data,
+                    baseline_name='baseline'
+                )
+            else:
+                intervention_stats = None
 
-        overall_persistence = persistence_stats['overall']['persistence_rate']
-        print(f"✓ Overall persistence rate: {overall_persistence:.1%}")
+            self.confabulation_analysis = {
+                'data_type': 'per_conversation',
+                'persistence_statistics': persistence_stats,
+                'intervention_effectiveness': intervention_stats,
+                'total_conversations': self.confabulation_data['conversation_id'].nunique(),
+                'total_turns': len(self.confabulation_data),
+            }
+
+            overall_persistence = persistence_stats['overall']['persistence_rate']
+            print(f"✓ Overall persistence rate: {overall_persistence:.1%}")
 
         return self.confabulation_analysis
 
@@ -371,6 +395,7 @@ class CrossStudyAnalysis:
             all_models.update(self.mirror_loop_data['model'].unique())
 
         if self._data_loaded['confabulation'] and 'model' in self.confabulation_data.columns:
+            # RC data is aggregate (per-model summary), not per-conversation
             all_models.update(self.confabulation_data['model'].unique())
 
         if self._data_loaded['violation_state'] and 'model' in self.violation_state_data.columns:
@@ -400,13 +425,24 @@ class CrossStudyAnalysis:
                 row['mirror_collapse_rate'] = None
 
             # Confabulation: persistence rate
+            # Note: RC data is aggregate (per-model summary from summary_by_model_arm.csv)
             if self._data_loaded['confabulation'] and 'model' in self.confabulation_data.columns:
-                model_data = self.confabulation_data[self.confabulation_data['model'] == model]
-                if len(model_data) > 0:
-                    pers_stats = calculate_persistence_rate(model_data)
-                    row['confab_persistence_rate'] = float(pers_stats['overall']['persistence_rate'])
+                # Check if this is aggregate data (has confab_persistence_rate column)
+                if 'confab_persistence_rate' in self.confabulation_data.columns:
+                    # Aggregate mode: look up metric directly
+                    model_row = self.confabulation_data[self.confabulation_data['model'] == model]
+                    if len(model_row) > 0:
+                        row['confab_persistence_rate'] = float(model_row['confab_persistence_rate'].iloc[0])
+                    else:
+                        row['confab_persistence_rate'] = None
                 else:
-                    row['confab_persistence_rate'] = None
+                    # Legacy mode: per-conversation data (if someone provides it locally)
+                    model_data = self.confabulation_data[self.confabulation_data['model'] == model]
+                    if len(model_data) > 0:
+                        pers_stats = calculate_persistence_rate(model_data)
+                        row['confab_persistence_rate'] = float(pers_stats['overall']['persistence_rate'])
+                    else:
+                        row['confab_persistence_rate'] = None
             else:
                 row['confab_persistence_rate'] = None
 
@@ -461,10 +497,19 @@ class CrossStudyAnalysis:
             }
 
         if self.confabulation_analysis:
-            summary['confabulation'] = {
-                'total_conversations': self.confabulation_analysis['total_conversations'],
-                'persistence_rate': self.confabulation_analysis['persistence_statistics']['overall']['persistence_rate'],
-            }
+            # Handle both aggregate and per-conversation data
+            if self.confabulation_analysis.get('data_type') == 'aggregate':
+                summary['confabulation'] = {
+                    'data_type': 'aggregate',
+                    'num_models': self.confabulation_analysis['num_models'],
+                    'mean_persistence_rate': self.confabulation_analysis['mean_persistence_rate'],
+                }
+            else:
+                summary['confabulation'] = {
+                    'data_type': 'per_conversation',
+                    'total_conversations': self.confabulation_analysis.get('total_conversations', 0),
+                    'persistence_rate': self.confabulation_analysis.get('persistence_statistics', {}).get('overall', {}).get('persistence_rate', 0),
+                }
 
         if self.violation_state_analysis:
             summary['violation_state'] = {

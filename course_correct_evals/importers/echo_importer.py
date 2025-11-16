@@ -71,8 +71,7 @@ class EchoChamberImporter:
         "initial_prompt": ["initial_prompt", "seed_prompt"],
         "convergence_reached": ["convergence_reached", "converged"],
         "timestamp": ["timestamp", "created_at", "time"],
-        "mean_degree": ["mean_degree", "degree"],
-        "p": ["p", "probability"],
+        # Note: mean_degree and p are mapped to simulation_id and step in REQUIRED_COLUMNS
     }
 
     def __init__(self, data_path: Optional[str] = None):
