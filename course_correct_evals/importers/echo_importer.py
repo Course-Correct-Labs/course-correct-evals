@@ -172,6 +172,24 @@ class EchoChamberImporter:
         # Rename columns to standard names
         df_normalized = df.rename(columns=normalized_cols)
 
+        # IMPORTANT: Ensure step and simulation_id columns exist
+        # The echo-chamber-zero CSV has columns: mean_degree, p, SRI, RE
+        # We map: mean_degree → simulation_id, p → step
+        # This should have happened via normalized_cols, but add safety check
+        if 'simulation_id' not in df_normalized.columns and 'mean_degree' in df.columns:
+            print("[EchoChamberImporter] Creating simulation_id from mean_degree")
+            df_normalized['simulation_id'] = df['mean_degree']
+
+        if 'step' not in df_normalized.columns and 'p' in df.columns:
+            print("[EchoChamberImporter] Creating step from p")
+            df_normalized['step'] = df['p']
+
+        # Validate required columns are present
+        if 'simulation_id' not in df_normalized.columns:
+            raise ValueError("'simulation_id' column not found after normalization and safety checks")
+        if 'step' not in df_normalized.columns:
+            raise ValueError("'step' column not found after normalization and safety checks")
+
         # Validate data types
         df_normalized['step'] = pd.to_numeric(df_normalized['step'], errors='coerce')
 

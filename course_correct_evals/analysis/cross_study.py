@@ -254,6 +254,26 @@ class CrossStudyAnalysis:
             mean_persistence = self.confabulation_data['confab_persistence_rate'].mean()
             mean_confab = self.confabulation_data.get('confab_rate', pd.Series([None])).mean()
 
+            # Build per-model statistics for backwards compatibility
+            by_model = {}
+            for _, row in self.confabulation_data.iterrows():
+                model = row['model']
+                by_model[model] = {
+                    'persistence_rate': float(row['confab_persistence_rate']),
+                    'confab_rate': float(row.get('confab_rate', 0)) if pd.notna(row.get('confab_rate')) else None,
+                    'sample_size': int(row.get('n', 0)) if pd.notna(row.get('n')) else None,
+                }
+
+            # Backwards-compatible structure for notebook/plotting code
+            persistence_statistics = {
+                'overall': {
+                    'persistence_rate': float(mean_persistence),
+                    'total_fabrications': None,  # Not available in aggregate data
+                    'persistent_fabrications': None,  # Not available in aggregate data
+                },
+                'by_model': by_model,
+            }
+
             self.confabulation_analysis = {
                 'data_type': 'aggregate',
                 'num_models': len(self.confabulation_data),
@@ -261,6 +281,10 @@ class CrossStudyAnalysis:
                 'mean_persistence_rate': float(mean_persistence),
                 'mean_confab_rate': float(mean_confab) if pd.notna(mean_confab) else None,
                 'persistence_by_model': self.confabulation_data[['model', 'confab_persistence_rate']].to_dict('records'),
+                # Add backwards-compatible structure
+                'persistence_statistics': persistence_statistics,
+                'total_conversations': len(self.confabulation_data),  # Number of model records
+                'total_turns': None,  # Not applicable for aggregate data
             }
 
             print(f"✓ Aggregate data: {len(self.confabulation_data)} models")

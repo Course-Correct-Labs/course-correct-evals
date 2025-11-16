@@ -57,3 +57,51 @@ def test_cross_study_analysis_importable():
     """Test that CrossStudyAnalysis can be imported"""
     from course_correct_evals import CrossStudyAnalysis
     assert CrossStudyAnalysis is not None
+
+
+class TestConfabulationBackwardsCompatibility:
+    """Test RC analysis backwards compatibility"""
+
+    def test_aggregate_rc_has_persistence_statistics(self):
+        """Test that aggregate RC data returns persistence_statistics structure"""
+        import pandas as pd
+        from course_correct_evals.analysis import CrossStudyAnalysis
+
+        # Create fake aggregate RC data
+        fake_rc_data = pd.DataFrame({
+            'model': ['model_a', 'model_b', 'model_c'],
+            'confab_persistence_rate': [0.7, 0.85, 0.6],
+            'confab_rate': [1.0, 0.9, 1.0],
+            'n': [10, 10, 10],
+        })
+
+        # Create observatory and inject fake data
+        observatory = CrossStudyAnalysis()
+        observatory.confabulation_data = fake_rc_data
+        observatory._data_loaded['confabulation'] = True
+
+        # Analyze
+        result = observatory.analyze_confabulation()
+
+        # Check backwards-compatible structure
+        assert 'persistence_statistics' in result, "Missing persistence_statistics key"
+        assert 'overall' in result['persistence_statistics'], "Missing persistence_statistics.overall"
+        assert 'persistence_rate' in result['persistence_statistics']['overall'], "Missing overall persistence_rate"
+
+        # Verify it's a float
+        assert isinstance(result['persistence_statistics']['overall']['persistence_rate'], float)
+
+        # Check per-model structure
+        assert 'by_model' in result['persistence_statistics'], "Missing by_model key"
+        assert 'model_a' in result['persistence_statistics']['by_model']
+        assert 'model_b' in result['persistence_statistics']['by_model']
+        assert 'model_c' in result['persistence_statistics']['by_model']
+
+        # Verify model-specific rates
+        assert abs(result['persistence_statistics']['by_model']['model_a']['persistence_rate'] - 0.7) < 0.01
+        assert abs(result['persistence_statistics']['by_model']['model_b']['persistence_rate'] - 0.85) < 0.01
+        assert abs(result['persistence_statistics']['by_model']['model_c']['persistence_rate'] - 0.6) < 0.01
+
+        # Verify overall is the mean
+        expected_mean = (0.7 + 0.85 + 0.6) / 3
+        assert abs(result['persistence_statistics']['overall']['persistence_rate'] - expected_mean) < 0.01
