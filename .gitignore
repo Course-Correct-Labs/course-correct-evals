@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Results and outputs
+results/
+outputs/
+*.png
+*.pdf
+*.csv
+*.json
+!pyproject.toml
+
+# API keys and secrets
+.env
+*.key
+*.pem
+credentials.json
+
+# Data files (should use existing study repos)
+data/
+mirror_loop_results*.csv
+confabulation_results*.csv
+violation_results*.csv
+simulation_results*.csv
+parsed_turns*.csv
+
+# Temporary files
+tmp/
+temp/
+*.tmp

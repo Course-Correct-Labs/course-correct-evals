@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "course-correct-evals"
+version = "0.1.0"
+description = "Course Correct Labs Reasoning Stability Observatory - Unified analysis system for CCL empirical studies"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Course Correct Labs", email = "labs@coursecorrect.ai"}
+]
+keywords = ["ai", "evaluation", "reasoning", "stability", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "sentence-transformers>=2.2.0",
+    "python-Levenshtein>=0.21.0",
+    "networkx>=3.0",
+    "jupyter>=1.0.0",
+    "streamlit>=1.30.0",
+    "scikit-learn>=1.3.0",
+    "scipy>=1.10.0",
+    "tqdm>=4.65.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+live-runner = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Course-Correct-Labs/course-correct-evals"
+Documentation = "https://github.com/Course-Correct-Labs/course-correct-evals/blob/main/README.md"
+Repository = "https://github.com/Course-Correct-Labs/course-correct-evals"
+
+[tool.setuptools]
+packages = ["course_correct_evals"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
