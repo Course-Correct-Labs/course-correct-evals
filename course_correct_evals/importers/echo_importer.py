@@ -9,10 +9,17 @@ We use these directly rather than reconstructing from raw data.
 """
 
 import os
+import io
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import pandas as pd
 import warnings
+
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
 
 
 class EchoChamberImporter:
@@ -28,6 +35,14 @@ class EchoChamberImporter:
 
     We use these precomputed values directly as ground truth.
     """
+
+    DEFAULT_FILENAME = "simulation_results.csv"
+
+    # GitHub fallback URL for automatic data fetching
+    FALLBACK_URL = (
+        "https://raw.githubusercontent.com/Course-Correct-Labs/"
+        "echo-chamber-zero/main/data/simulation_results.csv"
+    )
 
     DEFAULT_SEARCH_PATHS = [
         "simulation_results.csv",
@@ -69,27 +84,27 @@ class EchoChamberImporter:
         self.df: Optional[pd.DataFrame] = None
         self._column_mapping: Dict[str, str] = {}
         self._has_precomputed_metrics = False
+        self.data_source: Optional[str] = None  # Track where data was loaded from
 
-    def _find_data_file(self) -> str:
+    def _find_data_file(self) -> Optional[str]:
         """Find the data file by searching common locations."""
         if self.data_path:
             if os.path.exists(self.data_path):
+                self.data_source = f"explicit_path:{self.data_path}"
                 return self.data_path
-            raise FileNotFoundError(f"Specified data path does not exist: {self.data_path}")
+            return None
 
         env_path = os.getenv("ECHO_CHAMBER_DATA_PATH")
         if env_path and os.path.exists(env_path):
+            self.data_source = f"env_var:{env_path}"
             return env_path
 
         for search_path in self.DEFAULT_SEARCH_PATHS:
             if os.path.exists(search_path):
+                self.data_source = f"local:{search_path}"
                 return search_path
 
-        raise FileNotFoundError(
-            "Echo Chamber data file not found. Searched locations:\n" +
-            "\n".join(f"  - {p}" for p in self.DEFAULT_SEARCH_PATHS) +
-            "\n\nPlease provide data_path explicitly or set ECHO_CHAMBER_DATA_PATH environment variable."
-        )
+        return None
 
     def _normalize_column_name(self, df: pd.DataFrame, standard_name: str, variants: List[str]) -> Optional[str]:
         """Find a column by checking variants (case-insensitive)."""
@@ -178,30 +193,62 @@ class EchoChamberImporter:
 
         return df_normalized
 
-    def load_data(self) -> pd.DataFrame:
+    def load_data(self) -> Optional[pd.DataFrame]:
         """
         Load and validate the Echo Chamber data.
 
-        Returns:
-            Normalized DataFrame with standard column names and precomputed metrics
-        """
-        file_path = self._find_data_file()
-        print(f"Loading Echo Chamber data from: {file_path}")
+        Tries local paths first, then falls back to GitHub if needed.
 
-        try:
-            df = pd.read_csv(file_path)
-        except Exception as e:
-            raise ValueError(f"Failed to read CSV file: {e}")
+        Returns:
+            Normalized DataFrame with standard column names and precomputed metrics, or None if data unavailable
+        """
+        df = None
+
+        # Try to find data file locally
+        file_path = self._find_data_file()
+
+        if file_path:
+            print(f"Loading Echo Chamber data from: {file_path}")
+            try:
+                df = pd.read_csv(file_path)
+            except Exception as e:
+                print(f"[EchoChamberImporter] Failed to read local file: {e}")
+                df = None
+
+        # If not found locally, try GitHub fallback
+        if df is None and REQUESTS_AVAILABLE:
+            print(f"[EchoChamberImporter] Trying GitHub fallback: {self.FALLBACK_URL}")
+            try:
+                response = requests.get(self.FALLBACK_URL, timeout=10)
+                response.raise_for_status()
+                df = pd.read_csv(io.StringIO(response.text))
+                self.data_source = f"remote:{self.FALLBACK_URL}"
+                print(f"✓ Loaded Echo Chamber data from GitHub")
+            except Exception as e:
+                print(f"[EchoChamberImporter] GitHub fallback failed: {e}")
+                df = None
+
+        # If still no data, return None
+        if df is None:
+            print("[EchoChamberImporter] Data not available from any source")
+            return None
 
         if len(df) == 0:
-            raise ValueError("Data file is empty")
+            print("[EchoChamberImporter] Data file is empty")
+            return None
 
         print(f"Loaded {len(df)} rows, {len(df.columns)} columns")
 
-        df_normalized = self._validate_and_normalize(df)
+        try:
+            df_normalized = self._validate_and_normalize(df)
+        except Exception as e:
+            print(f"[EchoChamberImporter] Data validation failed: {e}")
+            return None
+
         self.df = df_normalized
 
         print(f"✓ Data validated: {len(df_normalized)} steps across {df_normalized['simulation_id'].nunique()} simulations")
+        print(f"  Source: {self.data_source}")
 
         return df_normalized
 

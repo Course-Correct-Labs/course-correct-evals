@@ -61,6 +61,14 @@ class CrossStudyAnalysis:
             'echo_chamber': False,
         }
 
+        # Track where data was loaded from
+        self._data_sources = {
+            'mirror_loop': None,
+            'confabulation': None,
+            'violation_state': None,
+            'echo_chamber': None,
+        }
+
     def load_all_studies(
         self,
         mirror_loop_path: Optional[str] = None,
@@ -88,17 +96,18 @@ class CrossStudyAnalysis:
 
         # Try to load each study
         # Mirror Loop
+        print("\n[1/4] Mirror Loop Study...")
+        importer = MirrorLoopImporter(data_path=mirror_loop_path)
         try:
-            print("\n[1/4] Mirror Loop Study...")
-            importer = MirrorLoopImporter(data_path=mirror_loop_path)
             self.mirror_loop_data = importer.load_data()
-            self._data_loaded['mirror_loop'] = True
-            print("✓ Mirror Loop loaded successfully")
-        except FileNotFoundError as e:
-            if fail_on_missing:
-                raise
-            warnings.warn(f"Mirror Loop data not found: {e}")
-            print("✗ Mirror Loop not available")
+            if self.mirror_loop_data is not None:
+                self._data_loaded['mirror_loop'] = True
+                self._data_sources['mirror_loop'] = importer.data_source
+                print("✓ Mirror Loop loaded successfully")
+            else:
+                if fail_on_missing:
+                    raise ValueError("Mirror Loop data not available")
+                print("✗ Mirror Loop not available")
         except Exception as e:
             if fail_on_missing:
                 raise
@@ -106,17 +115,18 @@ class CrossStudyAnalysis:
             print(f"✗ Mirror Loop error: {e}")
 
         # Confabulation
+        print("\n[2/4] Recursive Confabulation Study...")
+        importer = ConfabulationImporter(data_path=confabulation_path)
         try:
-            print("\n[2/4] Recursive Confabulation Study...")
-            importer = ConfabulationImporter(data_path=confabulation_path)
             self.confabulation_data = importer.load_data()
-            self._data_loaded['confabulation'] = True
-            print("✓ Confabulation loaded successfully")
-        except FileNotFoundError as e:
-            if fail_on_missing:
-                raise
-            warnings.warn(f"Confabulation data not found: {e}")
-            print("✗ Confabulation not available")
+            if self.confabulation_data is not None:
+                self._data_loaded['confabulation'] = True
+                self._data_sources['confabulation'] = importer.data_source
+                print("✓ Confabulation loaded successfully")
+            else:
+                if fail_on_missing:
+                    raise ValueError("Confabulation data not available")
+                print("✗ Confabulation not available")
         except Exception as e:
             if fail_on_missing:
                 raise
@@ -124,17 +134,18 @@ class CrossStudyAnalysis:
             print(f"✗ Confabulation error: {e}")
 
         # Violation State
+        print("\n[3/4] Violation State Study...")
+        importer = ViolationStateImporter(data_path=violation_state_path)
         try:
-            print("\n[3/4] Violation State Study...")
-            importer = ViolationStateImporter(data_path=violation_state_path)
             self.violation_state_data = importer.load_data()
-            self._data_loaded['violation_state'] = True
-            print("✓ Violation State loaded successfully")
-        except FileNotFoundError as e:
-            if fail_on_missing:
-                raise
-            warnings.warn(f"Violation State data not found: {e}")
-            print("✗ Violation State not available")
+            if self.violation_state_data is not None:
+                self._data_loaded['violation_state'] = True
+                self._data_sources['violation_state'] = importer.data_source
+                print("✓ Violation State loaded successfully")
+            else:
+                if fail_on_missing:
+                    raise ValueError("Violation State data not available")
+                print("✗ Violation State not available")
         except Exception as e:
             if fail_on_missing:
                 raise
@@ -142,12 +153,18 @@ class CrossStudyAnalysis:
             print(f"✗ Violation State error: {e}")
 
         # Echo Chamber
+        print("\n[4/4] Echo Chamber Study...")
+        importer = EchoChamberImporter(data_path=echo_chamber_path)
         try:
-            print("\n[4/4] Echo Chamber Study...")
-            importer = EchoChamberImporter(data_path=echo_chamber_path)
             self.echo_chamber_data = importer.load_data()
-            self._data_loaded['echo_chamber'] = True
-            print("✓ Echo Chamber loaded successfully")
+            if self.echo_chamber_data is not None:
+                self._data_loaded['echo_chamber'] = True
+                self._data_sources['echo_chamber'] = importer.data_source
+                print("✓ Echo Chamber loaded successfully")
+            else:
+                if fail_on_missing:
+                    raise ValueError("Echo Chamber data not available")
+                print("✗ Echo Chamber not available")
         except FileNotFoundError as e:
             if fail_on_missing:
                 raise
@@ -458,6 +475,29 @@ class CrossStudyAnalysis:
         if self.echo_chamber_analysis:
             summary['echo_chamber'] = {
                 'total_simulations': self.echo_chamber_analysis['total_simulations'],
+            }
+
+        return summary
+
+    def get_data_source_summary(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get data source status for all studies.
+
+        Useful for debugging and transparency about where data was loaded from.
+
+        Returns:
+            Dictionary mapping study names to their load status and source.
+            Each study has:
+                - 'loaded': bool indicating if data is available
+                - 'source': string describing where data came from
+                  (e.g., 'explicit_path:...', 'local:...', 'remote:...', 'not_loaded')
+        """
+        summary = {}
+
+        for study_name in ['mirror_loop', 'confabulation', 'violation_state', 'echo_chamber']:
+            summary[study_name] = {
+                'loaded': self._data_loaded[study_name],
+                'source': self._data_sources[study_name] if self._data_sources[study_name] else 'not_loaded'
             }
 
         return summary

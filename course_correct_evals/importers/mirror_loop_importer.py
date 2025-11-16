@@ -6,10 +6,17 @@ This importer is READ ONLY - it does not modify source data.
 """
 
 import os
+import io
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 import pandas as pd
 import warnings
+
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
 
 
 class MirrorLoopImporter:
@@ -19,6 +26,14 @@ class MirrorLoopImporter:
     The Mirror Loop study examines information collapse in iterative self-critique.
     This importer loads sequences of model outputs and prepares them for ΔI analysis.
     """
+
+    DEFAULT_FILENAME = "mirror_loop_results_all.csv"
+
+    # GitHub fallback URL for automatic data fetching
+    FALLBACK_URL = (
+        "https://raw.githubusercontent.com/Course-Correct-Labs/"
+        "mirror-loop/main/data/mirror_loop_results_all.csv"
+    )
 
     DEFAULT_SEARCH_PATHS = [
         "mirror_loop_results_all.csv",
@@ -51,41 +66,38 @@ class MirrorLoopImporter:
         self.data_path = data_path
         self.df: Optional[pd.DataFrame] = None
         self._column_mapping: Dict[str, str] = {}
+        self.data_source: Optional[str] = None  # Track where data was loaded from
 
-    def _find_data_file(self) -> str:
+    def _find_data_file(self) -> Optional[str]:
         """
         Find the data file by searching common locations.
 
         Returns:
-            Path to the data file
+            Path to the data file, or None if not found locally
 
-        Raises:
-            FileNotFoundError: If data file cannot be found
         """
         # Check explicit path first
         if self.data_path:
             if os.path.exists(self.data_path):
+                self.data_source = f"explicit_path:{self.data_path}"
                 return self.data_path
-            raise FileNotFoundError(
-                f"Specified data path does not exist: {self.data_path}"
-            )
+            # If explicit path given but doesn't exist, don't continue searching
+            return None
 
         # Check environment variable
         env_path = os.getenv("MIRROR_LOOP_DATA_PATH")
         if env_path and os.path.exists(env_path):
+            self.data_source = f"env_var:{env_path}"
             return env_path
 
         # Search default locations
         for search_path in self.DEFAULT_SEARCH_PATHS:
             if os.path.exists(search_path):
+                self.data_source = f"local:{search_path}"
                 return search_path
 
-        # Not found - raise helpful error
-        raise FileNotFoundError(
-            "Mirror Loop data file not found. Searched locations:\n" +
-            "\n".join(f"  - {p}" for p in self.DEFAULT_SEARCH_PATHS) +
-            "\n\nPlease provide data_path explicitly or set MIRROR_LOOP_DATA_PATH environment variable."
-        )
+        # Not found locally
+        return None
 
     def _normalize_column_name(self, df: pd.DataFrame, standard_name: str, variants: List[str]) -> Optional[str]:
         """
@@ -162,40 +174,66 @@ class MirrorLoopImporter:
 
         return df_normalized
 
-    def load_data(self) -> pd.DataFrame:
+    def load_data(self) -> Optional[pd.DataFrame]:
         """
         Load and validate the Mirror Loop data.
 
+        Tries local paths first, then falls back to GitHub if needed.
+
         Returns:
-            Normalized DataFrame with standard column names
-
-        Raises:
-            FileNotFoundError: If data file not found
-            ValueError: If data validation fails
+            Normalized DataFrame with standard column names, or None if data unavailable
         """
-        # Find data file
-        file_path = self._find_data_file()
-        print(f"Loading Mirror Loop data from: {file_path}")
+        df = None
 
-        # Load CSV
-        try:
-            df = pd.read_csv(file_path)
-        except Exception as e:
-            raise ValueError(f"Failed to read CSV file: {e}")
+        # Try to find data file locally
+        file_path = self._find_data_file()
+
+        if file_path:
+            # Load from local file
+            print(f"Loading Mirror Loop data from: {file_path}")
+            try:
+                df = pd.read_csv(file_path)
+            except Exception as e:
+                print(f"[MirrorLoopImporter] Failed to read local file: {e}")
+                df = None
+
+        # If not found locally, try GitHub fallback
+        if df is None and REQUESTS_AVAILABLE:
+            print(f"[MirrorLoopImporter] Trying GitHub fallback: {self.FALLBACK_URL}")
+            try:
+                response = requests.get(self.FALLBACK_URL, timeout=10)
+                response.raise_for_status()
+                df = pd.read_csv(io.StringIO(response.text))
+                self.data_source = f"remote:{self.FALLBACK_URL}"
+                print(f"✓ Loaded Mirror Loop data from GitHub")
+            except Exception as e:
+                print(f"[MirrorLoopImporter] GitHub fallback failed: {e}")
+                df = None
+
+        # If still no data, return None
+        if df is None:
+            print("[MirrorLoopImporter] Data not available from any source")
+            return None
 
         # Validate not empty
         if len(df) == 0:
-            raise ValueError("Data file is empty")
+            print("[MirrorLoopImporter] Data file is empty")
+            return None
 
         print(f"Loaded {len(df)} rows, {len(df.columns)} columns")
 
         # Validate and normalize
-        df_normalized = self._validate_and_normalize(df)
+        try:
+            df_normalized = self._validate_and_normalize(df)
+        except Exception as e:
+            print(f"[MirrorLoopImporter] Data validation failed: {e}")
+            return None
 
         # Store for later access
         self.df = df_normalized
 
         print(f"✓ Data validated: {len(df_normalized)} rows across {df_normalized['sequence_id'].nunique()} sequences")
+        print(f"  Source: {self.data_source}")
 
         return df_normalized
 
