@@ -4,6 +4,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Course-Correct-Labs/course-correct-evals/blob/main/notebooks/CCL_Reasoning_Stability_Observatory.ipynb)
 
 ## Overview
 
@@ -66,6 +67,13 @@ pip install -e ".[live-runner]"
 ## Quick Start
 
 ### 1. Run the Flagship Notebook
+
+**Option A: Google Colab (No Installation Required)**
+
+Click the badge at the top of this README or visit:
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Course-Correct-Labs/course-correct-evals/blob/main/notebooks/CCL_Reasoning_Stability_Observatory.ipynb)
+
+**Option B: Local Jupyter**
 
 ```bash
 jupyter notebook notebooks/CCL_Reasoning_Stability_Observatory.ipynb
