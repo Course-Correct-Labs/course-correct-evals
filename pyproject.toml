@@ -55,8 +55,9 @@ Homepage = "https://github.com/Course-Correct-Labs/course-correct-evals"
 Documentation = "https://github.com/Course-Correct-Labs/course-correct-evals/blob/main/README.md"
 Repository = "https://github.com/Course-Correct-Labs/course-correct-evals"
 
-[tool.setuptools]
-packages = ["course_correct_evals"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["course_correct_evals*"]
 
 [tool.black]
 line-length = 100
