@@ -45,18 +45,19 @@ class ViolationStateImporter:
     ]
 
     REQUIRED_COLUMNS = {
-        "conversation_id": ["conversation_id", "session_id", "run_id"],
-        "turn_number": ["turn_number", "turn", "iteration"],
-        "content": ["content", "message", "text", "response"],
+        "conversation_id": ["conversation_id", "session_id", "run_id", "thread_id"],
+        "turn_number": ["turn_number", "turn", "step", "iteration", "assistant_turn_index", "assistant_turn", "user_turn_index"],
+        "content": ["content", "message", "text", "response", "assistant_text", "user_text"],
     }
 
     OPTIONAL_COLUMNS = {
         "violation_type": ["violation_type", "violation", "request_type"],
         "model": ["model", "model_name"],
-        "response_type": ["response_type", "classification", "category"],
+        "response_type": ["response_type", "classification", "category", "response_class"],
         "contamination_detected": ["contamination_detected", "contaminated", "is_contaminated"],
         "timestamp": ["timestamp", "created_at", "time"],
         "role": ["role", "speaker"],
+        "condition": ["condition"],
     }
 
     def __init__(self, data_path: Optional[str] = None):

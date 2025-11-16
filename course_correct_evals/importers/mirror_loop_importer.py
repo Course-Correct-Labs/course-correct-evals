@@ -47,7 +47,7 @@ class MirrorLoopImporter:
         "iteration": ["iteration", "turn", "step", "turn_number"],
         "model": ["model", "model_name", "model_id"],
         "response": ["response", "output", "output_text", "content", "text"],
-        "sequence_id": ["sequence_id", "run_id", "session_id", "conversation_id"],
+        "sequence_id": ["sequence_id", "run_id", "session_id", "conversation_id", "seq_id"],
     }
 
     OPTIONAL_COLUMNS = {

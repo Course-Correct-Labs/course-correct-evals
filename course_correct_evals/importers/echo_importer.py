@@ -53,8 +53,8 @@ class EchoChamberImporter:
     ]
 
     REQUIRED_COLUMNS = {
-        "simulation_id": ["simulation_id", "run_id", "session_id"],
-        "step": ["step", "iteration", "turn"],
+        "simulation_id": ["simulation_id", "run_id", "session_id", "mean_degree"],
+        "step": ["step", "iteration", "turn", "p"],
     }
 
     # These are the precomputed metrics we rely on
@@ -71,6 +71,8 @@ class EchoChamberImporter:
         "initial_prompt": ["initial_prompt", "seed_prompt"],
         "convergence_reached": ["convergence_reached", "converged"],
         "timestamp": ["timestamp", "created_at", "time"],
+        "mean_degree": ["mean_degree", "degree"],
+        "p": ["p", "probability"],
     }
 
     def __init__(self, data_path: Optional[str] = None):

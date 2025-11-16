@@ -194,3 +194,129 @@ def test_all_importers_importable():
         EchoChamberImporter,
     )
     assert True
+
+
+class TestRealWorldSchemas:
+    """Test importers with real-world GitHub CSV schemas"""
+
+    def test_mirror_loop_with_seq_id(self):
+        """Test MirrorLoopImporter with real GitHub schema using seq_id"""
+        # Real schema from mirror-loop repo
+        data = pd.DataFrame({
+            'provider': ['openai', 'openai', 'openai'],
+            'model': ['gpt-4', 'gpt-4', 'gpt-4'],
+            'temperature': [0.7, 0.7, 0.7],
+            'task_type': ['critique', 'critique', 'critique'],
+            'task_id': ['task1', 'task1', 'task1'],
+            'condition': ['control', 'control', 'control'],
+            'iteration': [0, 1, 2],
+            'output_text': ['First output', 'Second output', 'Third output'],
+            'output_length_chars': [100, 95, 90],
+            'edit_change': [0.0, 0.1, 0.15],
+            'char_entropy': [4.5, 4.3, 4.2],
+            'ngram_novelty': [0.8, 0.6, 0.5],
+            'emb_cosine': [1.0, 0.95, 0.92],
+            'no_new_info_claimed': [False, False, True],
+            'possible_grounding_violation': [False, False, False],
+            'refusal_or_resistance': [False, False, False],
+            'seq_id': ['sequence_1', 'sequence_1', 'sequence_1'],
+        })
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_path = f.name
+
+        try:
+            importer = MirrorLoopImporter(data_path=temp_path)
+            df = importer.load_data()
+
+            assert df is not None, "Failed to load data with seq_id column"
+            assert len(df) == 3
+            assert 'iteration' in df.columns
+            assert 'model' in df.columns
+            assert 'response' in df.columns
+            assert 'sequence_id' in df.columns
+
+            # Verify mapping
+            assert all(df['response'] == data['output_text'])
+            assert all(df['sequence_id'] == data['seq_id'])
+        finally:
+            os.unlink(temp_path)
+
+    def test_violation_state_with_real_schema(self):
+        """Test ViolationStateImporter with real GitHub schema"""
+        # Real schema from violation-state repo
+        data = pd.DataFrame({
+            'thread_id': ['thread1', 'thread1', 'thread2', 'thread2'],
+            'condition': ['violation', 'violation', 'control', 'control'],
+            'user_turn_index': [0, 1, 0, 1],
+            'assistant_turn_index': [0, 1, 0, 1],
+            'prompt_id': ['p1', 'p1', 'p2', 'p2'],
+            'user_text': ['User msg 1', 'User msg 2', 'User msg 3', 'User msg 4'],
+            'assistant_text': ['Assistant 1', 'Assistant 2', 'Assistant 3', 'Assistant 4'],
+            'response_class': ['normal', 'contaminated', 'normal', 'normal'],
+        })
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_path = f.name
+
+        try:
+            importer = ViolationStateImporter(data_path=temp_path)
+            df = importer.load_data()
+
+            assert df is not None, "Failed to load data with real violation-state schema"
+            assert len(df) == 4
+            assert 'conversation_id' in df.columns
+            assert 'turn_number' in df.columns
+            assert 'content' in df.columns
+            assert 'response_type' in df.columns
+            assert 'condition' in df.columns
+
+            # Verify mapping
+            assert all(df['conversation_id'] == data['thread_id'])
+            assert all(df['turn_number'] == data['assistant_turn_index'])
+            assert all(df['content'] == data['assistant_text'])
+            assert all(df['response_type'] == data['response_class'])
+        finally:
+            os.unlink(temp_path)
+
+    def test_echo_chamber_with_real_schema(self):
+        """Test EchoChamberImporter with real GitHub schema"""
+        # Real schema from echo-chamber-zero repo
+        data = pd.DataFrame({
+            'mean_degree': [4, 4, 4, 6, 6, 6],
+            'p': [0.1, 0.2, 0.3, 0.1, 0.2, 0.3],
+            'SRI': [0.25, 0.35, 0.45, 0.30, 0.40, 0.50],
+            'RE': [0.85, 0.75, 0.65, 0.80, 0.70, 0.60],
+        })
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
+            data.to_csv(f.name, index=False)
+            temp_path = f.name
+
+        try:
+            importer = EchoChamberImporter(data_path=temp_path)
+            df = importer.load_data()
+
+            assert df is not None, "Failed to load data with real echo-chamber schema"
+            assert len(df) == 6
+            assert 'simulation_id' in df.columns
+            assert 'step' in df.columns
+            assert 'SRI' in df.columns
+            assert 'RE' in df.columns
+
+            # Verify mapping
+            assert all(df['simulation_id'] == data['mean_degree'])
+            assert all(df['step'] == data['p'])
+        finally:
+            os.unlink(temp_path)
+
+    def test_confabulation_handles_404(self):
+        """Test ConfabulationImporter handles missing data gracefully"""
+        # Test that load_data returns None when no data is available
+        importer = ConfabulationImporter(data_path="/nonexistent/path.csv")
+        df = importer.load_data()
+
+        assert df is None, "Should return None for nonexistent file"
+        assert importer.data_source == "not_loaded"
