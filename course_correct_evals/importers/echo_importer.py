@@ -202,55 +202,62 @@ class EchoChamberImporter:
         Returns:
             Normalized DataFrame with standard column names and precomputed metrics, or None if data unavailable
         """
-        df = None
+        # Build list of candidates to try
+        candidates = []
 
-        # Try to find data file locally
-        file_path = self._find_data_file()
+        # 1) Explicit path
+        if self.data_path:
+            candidates.append(("explicit_path", self.data_path))
 
-        if file_path:
-            print(f"Loading Echo Chamber data from: {file_path}")
+        # 2) Environment variable
+        env_path = os.getenv("ECHO_CHAMBER_DATA_PATH")
+        if env_path:
+            candidates.append(("env:ECHO_CHAMBER_DATA_PATH", env_path))
+
+        # 3) Local default paths
+        for local_path in self.DEFAULT_SEARCH_PATHS:
+            candidates.append(("local", local_path))
+
+        # Try all local/explicit candidates
+        for source_type, path in candidates:
+            if path and os.path.exists(path):
+                print(f"[EchoChamberImporter] Loading data from {source_type}: {path}")
+                try:
+                    df = pd.read_csv(path)
+                    if df is None or len(df) == 0:
+                        print(f"[EchoChamberImporter] Data file is empty: {path}")
+                        continue
+                    self.data_source = f"{source_type}:{path}"
+                    df_normalized = self._validate_and_normalize(df)
+                    self.df = df_normalized
+                    print(f"[EchoChamberImporter] ✓ Loaded {len(df_normalized)} rows from {source_type}")
+                    return df_normalized
+                except Exception as e:
+                    print(f"[EchoChamberImporter] Failed to load from {path}: {e}")
+                    continue
+
+        # 4) GitHub raw fallback
+        if REQUESTS_AVAILABLE:
             try:
-                df = pd.read_csv(file_path)
-            except Exception as e:
-                print(f"[EchoChamberImporter] Failed to read local file: {e}")
-                df = None
-
-        # If not found locally, try GitHub fallback
-        if df is None and REQUESTS_AVAILABLE:
-            print(f"[EchoChamberImporter] Trying GitHub fallback: {self.FALLBACK_URL}")
-            try:
-                response = requests.get(self.FALLBACK_URL, timeout=10)
-                response.raise_for_status()
-                df = pd.read_csv(io.StringIO(response.text))
-                self.data_source = f"remote:{self.FALLBACK_URL}"
-                print(f"✓ Loaded Echo Chamber data from GitHub")
+                print(f"[EchoChamberImporter] Trying GitHub fallback: {self.FALLBACK_URL}")
+                resp = requests.get(self.FALLBACK_URL, timeout=15)
+                resp.raise_for_status()
+                df = pd.read_csv(io.StringIO(resp.text))
+                if df is None or len(df) == 0:
+                    print("[EchoChamberImporter] Remote data file is empty")
+                else:
+                    self.data_source = f"remote:{self.FALLBACK_URL}"
+                    df_normalized = self._validate_and_normalize(df)
+                    self.df = df_normalized
+                    print(f"[EchoChamberImporter] ✓ Loaded {len(df_normalized)} rows from GitHub")
+                    return df_normalized
             except Exception as e:
                 print(f"[EchoChamberImporter] GitHub fallback failed: {e}")
-                df = None
 
-        # If still no data, return None
-        if df is None:
-            print("[EchoChamberImporter] Data not available from any source")
-            return None
-
-        if len(df) == 0:
-            print("[EchoChamberImporter] Data file is empty")
-            return None
-
-        print(f"Loaded {len(df)} rows, {len(df.columns)} columns")
-
-        try:
-            df_normalized = self._validate_and_normalize(df)
-        except Exception as e:
-            print(f"[EchoChamberImporter] Data validation failed: {e}")
-            return None
-
-        self.df = df_normalized
-
-        print(f"✓ Data validated: {len(df_normalized)} steps across {df_normalized['simulation_id'].nunique()} simulations")
-        print(f"  Source: {self.data_source}")
-
-        return df_normalized
+        # 5) Nothing worked
+        self.data_source = "not_loaded"
+        print("[EchoChamberImporter] Data not available from any source")
+        return None
 
     def get_data_info(self) -> Dict[str, Any]:
         """Get summary information about the loaded data."""
