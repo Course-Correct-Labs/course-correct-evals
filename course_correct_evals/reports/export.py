@@ -143,8 +143,24 @@ def export_pdf_report(
         if 'confabulation' in summary:
             conf = summary['confabulation']
             f.write("### Recursive Confabulation Study\n\n")
-            f.write(f"- Total Conversations: {conf['total_conversations']}\n")
-            f.write(f"- Persistence Rate: {conf['persistence_rate']:.1%}\n\n")
+
+            # Handle aggregate vs per-conversation data
+            data_type = conf.get('data_type', 'unknown')
+            if data_type == 'aggregate':
+                # Aggregate mode: show model count instead of conversation count
+                num_models = conf.get('num_models', 'N/A')
+                f.write(f"- Data Type: Aggregate (per-model summary)\n")
+                f.write(f"- Models Analyzed: {num_models}\n")
+            else:
+                # Per-conversation mode
+                total_convs = conf.get('total_conversations', 'N/A')
+                f.write(f"- Total Conversations: {total_convs}\n")
+
+            # Persistence rate (available in both modes)
+            persistence = conf.get('persistence_rate')
+            if persistence is not None:
+                f.write(f"- Persistence Rate: {persistence:.1%}\n")
+            f.write("\n")
 
         # Violation State
         if 'violation_state' in summary:

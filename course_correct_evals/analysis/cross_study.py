@@ -528,6 +528,9 @@ class CrossStudyAnalysis:
                     'data_type': 'aggregate',
                     'num_models': self.confabulation_analysis['num_models'],
                     'mean_persistence_rate': self.confabulation_analysis['mean_persistence_rate'],
+                    # Include these keys for backwards compatibility with report generation
+                    'total_conversations': self.confabulation_analysis.get('total_conversations'),
+                    'persistence_rate': self.confabulation_analysis.get('mean_persistence_rate', 0),
                 }
             else:
                 summary['confabulation'] = {

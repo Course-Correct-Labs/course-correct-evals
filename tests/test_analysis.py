@@ -145,6 +145,93 @@ class TestConfabulationBackwardsCompatibility:
         # intervention_effectiveness can be None or DataFrame, but must exist
         assert result['intervention_effectiveness'] is None or hasattr(result['intervention_effectiveness'], 'columns')
 
+    def test_aggregate_rc_summary_has_required_keys(self):
+        """Test that get_summary() includes keys needed by export_pdf_report for aggregate RC data"""
+        import pandas as pd
+        from course_correct_evals.analysis import CrossStudyAnalysis
+
+        # Create fake aggregate RC data
+        fake_rc_data = pd.DataFrame({
+            'model': ['model_a', 'model_b'],
+            'confab_persistence_rate': [0.7, 0.85],
+            'confab_rate': [1.0, 0.9],
+            'n': [10, 10],
+        })
+
+        # Create observatory and inject fake data
+        observatory = CrossStudyAnalysis()
+        observatory.confabulation_data = fake_rc_data
+        observatory._data_loaded['confabulation'] = True
+
+        # Analyze first (populates confabulation_analysis)
+        observatory.analyze_confabulation()
+
+        # Get summary
+        summary = observatory.get_summary()
+
+        # Check that confabulation summary has the keys export_pdf_report needs
+        assert 'confabulation' in summary
+        conf = summary['confabulation']
+
+        # Should have these keys for report generation
+        assert 'data_type' in conf
+        assert 'total_conversations' in conf  # Should exist even in aggregate mode
+        assert 'persistence_rate' in conf  # Should exist even in aggregate mode
+
+        # Verify values
+        assert conf['data_type'] == 'aggregate'
+        assert conf['total_conversations'] == 2  # Number of model records
+        assert abs(conf['persistence_rate'] - 0.775) < 0.01  # (0.7 + 0.85) / 2
+
+
+class TestReportGeneration:
+    """Test report generation with various data states"""
+
+    def test_export_pdf_report_with_aggregate_rc(self):
+        """Test that export_pdf_report works with aggregate RC data"""
+        import pandas as pd
+        import tempfile
+        import os
+        from course_correct_evals.analysis import CrossStudyAnalysis
+        from course_correct_evals.reports import export_pdf_report
+
+        # Create fake aggregate RC data
+        fake_rc_data = pd.DataFrame({
+            'model': ['model_a', 'model_b'],
+            'confab_persistence_rate': [0.7, 0.85],
+            'confab_rate': [1.0, 0.9],
+            'n': [10, 10],
+        })
+
+        # Create observatory and inject fake data
+        observatory = CrossStudyAnalysis()
+        observatory.confabulation_data = fake_rc_data
+        observatory._data_loaded['confabulation'] = True
+
+        # Analyze
+        observatory.analyze_confabulation()
+
+        # Generate report to temp file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            temp_path = f.name
+
+        try:
+            # Should not crash
+            result_path = export_pdf_report(observatory, output_path=temp_path)
+
+            # Verify file was created
+            assert os.path.exists(result_path)
+
+            # Verify content includes confabulation section
+            with open(result_path, 'r') as f:
+                content = f.read()
+                assert 'Recursive Confabulation Study' in content
+                assert 'Persistence Rate' in content or 'Models Analyzed' in content
+        finally:
+            # Cleanup
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
 
 class TestEchoChamberPlotting:
     """Test Echo Chamber visualization with varying metric availability"""
