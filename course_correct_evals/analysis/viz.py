@@ -244,12 +244,24 @@ def _plot_echo_chamber_panel(observatory: 'CrossStudyAnalysis', ax: plt.Axes):
     # Plot mean GR and SRI over time
     data = observatory.echo_chamber_data
 
+    # Build aggregation spec dynamically - only include columns that exist
+    agg_spec = {}
+    if 'GR' in data.columns:
+        agg_spec['GR'] = 'mean'
+    if 'SRI' in data.columns:
+        agg_spec['SRI'] = 'mean'
+    if 'RE' in data.columns:
+        agg_spec['RE'] = 'mean'
+
+    # If no metrics available, show fallback message
+    if not agg_spec:
+        ax.text(0.5, 0.5, 'Echo metrics not available',
+                ha='center', va='center', fontsize=12)
+        ax.set_title('Panel 4: Echo Chamber - Percolation Metrics', fontsize=12, fontweight='bold')
+        return
+
     # Aggregate by step
-    agg_data = data.groupby('step').agg({
-        'GR': 'mean' if 'GR' in data.columns else lambda x: None,
-        'SRI': 'mean' if 'SRI' in data.columns else lambda x: None,
-        'RE': 'mean' if 'RE' in data.columns else lambda x: None,
-    }).reset_index()
+    agg_data = data.groupby('step').agg(agg_spec).reset_index()
 
     steps = agg_data['step']
 

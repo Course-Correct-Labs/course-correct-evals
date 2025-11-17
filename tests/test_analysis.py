@@ -105,3 +105,80 @@ class TestConfabulationBackwardsCompatibility:
         # Verify overall is the mean
         expected_mean = (0.7 + 0.85 + 0.6) / 3
         assert abs(result['persistence_statistics']['overall']['persistence_rate'] - expected_mean) < 0.01
+
+
+class TestEchoChamberPlotting:
+    """Test Echo Chamber visualization with varying metric availability"""
+
+    def test_echo_panel_without_gr_column(self):
+        """Test that Echo panel works when GR column is missing (real echo-chamber-zero case)"""
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        from course_correct_evals.analysis import CrossStudyAnalysis
+        from course_correct_evals.analysis.viz import _plot_echo_chamber_panel
+
+        # Create fake Echo data WITHOUT GR column (matches real echo-chamber-zero CSV)
+        fake_echo_data = pd.DataFrame({
+            'simulation_id': [4, 4, 4, 6, 6, 6],
+            'step': [0.1, 0.2, 0.3, 0.1, 0.2, 0.3],
+            'SRI': [0.25, 0.35, 0.45, 0.30, 0.40, 0.50],
+            'RE': [0.85, 0.75, 0.65, 0.80, 0.70, 0.60],
+        })
+
+        # Create observatory and inject fake data
+        observatory = CrossStudyAnalysis()
+        observatory.echo_chamber_data = fake_echo_data
+        observatory._data_loaded['echo_chamber'] = True
+        observatory.echo_chamber_analysis = {}  # Mock analysis
+
+        # Create a matplotlib axes
+        fig, ax = plt.subplots()
+
+        # This should NOT raise KeyError even though GR is missing
+        try:
+            _plot_echo_chamber_panel(observatory, ax)
+            success = True
+        except KeyError as e:
+            success = False
+            error_msg = str(e)
+        finally:
+            plt.close(fig)
+
+        assert success, f"Echo panel raised KeyError when GR missing: {error_msg if not success else ''}"
+
+    def test_echo_panel_with_all_metrics(self):
+        """Test that Echo panel works when all metrics are present"""
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        from course_correct_evals.analysis import CrossStudyAnalysis
+        from course_correct_evals.analysis.viz import _plot_echo_chamber_panel
+
+        # Create fake Echo data WITH all metrics
+        fake_echo_data = pd.DataFrame({
+            'simulation_id': [4, 4, 6, 6],
+            'step': [0.1, 0.2, 0.1, 0.2],
+            'GR': [0.3, 0.4, 0.35, 0.45],
+            'SRI': [0.25, 0.35, 0.30, 0.40],
+            'RE': [0.85, 0.75, 0.80, 0.70],
+        })
+
+        # Create observatory and inject fake data
+        observatory = CrossStudyAnalysis()
+        observatory.echo_chamber_data = fake_echo_data
+        observatory._data_loaded['echo_chamber'] = True
+        observatory.echo_chamber_analysis = {}
+
+        # Create a matplotlib axes
+        fig, ax = plt.subplots()
+
+        # Should work fine with all metrics
+        try:
+            _plot_echo_chamber_panel(observatory, ax)
+            success = True
+        except Exception as e:
+            success = False
+            error_msg = str(e)
+        finally:
+            plt.close(fig)
+
+        assert success, f"Echo panel failed with all metrics: {error_msg if not success else ''}"
