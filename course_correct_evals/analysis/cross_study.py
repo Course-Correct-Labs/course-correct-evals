@@ -281,10 +281,11 @@ class CrossStudyAnalysis:
                 'mean_persistence_rate': float(mean_persistence),
                 'mean_confab_rate': float(mean_confab) if pd.notna(mean_confab) else None,
                 'persistence_by_model': self.confabulation_data[['model', 'confab_persistence_rate']].to_dict('records'),
-                # Add backwards-compatible structure
+                # Backwards-compatible structure for notebook
                 'persistence_statistics': persistence_statistics,
                 'total_conversations': len(self.confabulation_data),  # Number of model records
                 'total_turns': None,  # Not applicable for aggregate data
+                'intervention_effectiveness': None,  # Not available in aggregate mode
             }
 
             print(f"✓ Aggregate data: {len(self.confabulation_data)} models")

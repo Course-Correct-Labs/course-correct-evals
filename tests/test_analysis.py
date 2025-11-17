@@ -106,6 +106,45 @@ class TestConfabulationBackwardsCompatibility:
         expected_mean = (0.7 + 0.85 + 0.6) / 3
         assert abs(result['persistence_statistics']['overall']['persistence_rate'] - expected_mean) < 0.01
 
+    def test_aggregate_rc_has_all_required_keys(self):
+        """Test that aggregate RC data returns all keys required by notebook"""
+        import pandas as pd
+        from course_correct_evals.analysis import CrossStudyAnalysis
+
+        # Create fake aggregate RC data
+        fake_rc_data = pd.DataFrame({
+            'model': ['model_a', 'model_b'],
+            'confab_persistence_rate': [0.7, 0.85],
+            'confab_rate': [1.0, 0.9],
+            'n': [10, 10],
+        })
+
+        # Create observatory and inject fake data
+        observatory = CrossStudyAnalysis()
+        observatory.confabulation_data = fake_rc_data
+        observatory._data_loaded['confabulation'] = True
+
+        # Analyze
+        result = observatory.analyze_confabulation()
+
+        # Check all required keys exist (for notebook compatibility)
+        required_keys = [
+            'total_conversations',
+            'total_turns',
+            'persistence_statistics',
+            'intervention_effectiveness',
+        ]
+
+        for key in required_keys:
+            assert key in result, f"Missing required key: {key}"
+
+        # Verify types
+        assert isinstance(result['total_conversations'], (int, type(None)))
+        assert isinstance(result['total_turns'], (int, type(None)))
+        assert isinstance(result['persistence_statistics'], dict)
+        # intervention_effectiveness can be None or DataFrame, but must exist
+        assert result['intervention_effectiveness'] is None or hasattr(result['intervention_effectiveness'], 'columns')
+
 
 class TestEchoChamberPlotting:
     """Test Echo Chamber visualization with varying metric availability"""
