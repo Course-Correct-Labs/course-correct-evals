@@ -4,7 +4,7 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Course-Correct-Labs/course-correct-evals/blob/claude/build-ccl-observatory-01Tm8d1ASgVx3NTHTqaXPEpt/notebooks/CCL_Reasoning_Stability_Observatory.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Course-Correct-Labs/course-correct-evals/blob/main/notebooks/CCL_Reasoning_Stability_Observatory.ipynb)
 
 ## Overview
 
@@ -76,7 +76,7 @@ pip install -e ".[live-runner]"
 **Option A: Google Colab (No Installation Required)**
 
 Click the badge at the top of this README or visit:
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Course-Correct-Labs/course-correct-evals/blob/claude/build-ccl-observatory-01Tm8d1ASgVx3NTHTqaXPEpt/notebooks/CCL_Reasoning_Stability_Observatory.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Course-Correct-Labs/course-correct-evals/blob/main/notebooks/CCL_Reasoning_Stability_Observatory.ipynb)
 
 **Option B: Local Jupyter**
 
@@ -440,7 +440,7 @@ Exports (canonical, default):
 from course_correct_evals.reports import export_pdf_report
 
 # Generate markdown report
-report_path = export_pdf_report(observatory)
+report_path = export_pdf_report(observatory, output_path='results/ccl_observatory_report.pdf')
 ```
 
 Convert to PDF:
