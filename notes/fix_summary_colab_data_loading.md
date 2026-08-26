@@ -1,5 +1,12 @@
 # Fix Summary: Colab Data Loading
 
+> **Note (post-decoupling):** this record predates the Echo Chamber Zero
+> Observatory decoupling. The "4 STUDIES" references below reflect the
+> architecture at the time; the canonical Observatory now evaluates three
+> studies (Mirror Loop, Recursive Confabulation, Violation State), with Echo
+> Chamber Zero retained as noncanonical/opt-in. See `README.md` and
+> `notes/source_mapping.md` for the current architecture.
+
 ## Problem
 
 The CCL Reasoning Stability Observatory notebook was showing "0/4 STUDIES LOADED" in Google Colab, even though CSV data files existed on GitHub for the study repos.

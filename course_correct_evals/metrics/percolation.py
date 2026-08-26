@@ -1,8 +1,14 @@
 """
-Echo Chamber Percolation Metrics
+Echo Chamber Zero Percolation Metrics
 
-Metrics for analyzing belief percolation and radicalization in multi-agent systems.
-Used for the Echo Chamber study.
+NONCANONICAL / OPT-IN: retained for provenance/backward compatibility.
+Echo Chamber Zero is an independent Course Correct Labs theoretical/
+systemic research project (synthetic epistemic drift modeled as
+percolation on a provenance graph), not part of the canonical Reasoning
+Stability Observatory evaluation set (Mirror Loop, Recursive
+Confabulation, Violation State), and not a peer behavioral model
+evaluation. Used only when explicitly opted into via
+CrossStudyAnalysis.load_all_studies(include_echo_chamber=True).
 
 IMPORTANT: This module primarily uses PRECOMPUTED metrics (GR, SRI, RE) from
 the simulation_results.csv. NetworkX reconstruction is optional and for future data only.
@@ -31,9 +37,9 @@ def analyze_echo_metrics(
         df: DataFrame with simulation data
         simulation_id_col: Column for simulation ID
         step_col: Column for step/iteration
-        gr_col: Column for Group Radicalization metric
-        sri_col: Column for Self-Reinforcement Index
-        re_col: Column for Reasoning Entropy
+        gr_col: Column for Groundedness Ratio metric
+        sri_col: Column for Synthetic Recurrence Index
+        re_col: Column for Referential Entropy
 
     Returns:
         Dictionary with metric analysis

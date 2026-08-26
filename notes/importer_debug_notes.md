@@ -1,5 +1,12 @@
 # Importer Debug Notes
 
+> **Note (post-decoupling):** this record predates the Echo Chamber Zero
+> Observatory decoupling. The "4 studies" references below reflect the
+> architecture at the time; the canonical Observatory now evaluates three
+> studies (Mirror Loop, Recursive Confabulation, Violation State), with Echo
+> Chamber Zero retained as noncanonical/opt-in. See `README.md` and
+> `notes/source_mapping.md` for the current architecture.
+
 ## Issue: 0/4 Studies Loaded in Colab
 
 ### Root Cause Analysis

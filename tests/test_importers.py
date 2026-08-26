@@ -321,8 +321,16 @@ class TestRealWorldSchemas:
         assert df is None, "Should return None for nonexistent file"
         assert importer.data_source == "not_loaded"
 
-    def test_confabulation_aggregate_mode(self):
-        """Test ConfabulationImporter with aggregate summary data"""
+    def test_confabulation_model_arm_table_preserved(self):
+        """Test ConfabulationImporter preserves the released model x arm table.
+
+        Phase 4 superseded the old arm-blind-averaging behavior this test
+        previously asserted (it used to check that persist_rate was
+        averaged across arms per model -- that was the confirmed defect).
+        Updated to assert the corrected, manuscript-faithful behavior:
+        the importer returns the table UNMODIFIED, one row per
+        (model, arm), with no collapsed/renamed metric.
+        """
         # Simulate summary_by_model_arm.csv structure
         data = pd.DataFrame({
             'model': ['model_a', 'model_a', 'model_b', 'model_b'],
@@ -340,20 +348,22 @@ class TestRealWorldSchemas:
 
         try:
             importer = ConfabulationImporter(data_path=temp_path)
-            summary = importer.load_data()
+            table = importer.load_data()
 
-            assert summary is not None, "Should load aggregate data"
-            assert 'model' in summary.columns
-            assert 'confab_persistence_rate' in summary.columns
+            assert table is not None, "Should load model x arm data"
+            assert 'model' in table.columns
+            assert 'arm' in table.columns
+            assert 'persist_rate' in table.columns
 
-            # Should have one row per model
-            assert len(summary) == 2  # model_a and model_b
+            # No arm-blind averaging: no collapsed/renamed column, and all
+            # 4 released (model, arm) rows survive unchanged.
+            assert 'confab_persistence_rate' not in table.columns
+            assert len(table) == 4
 
-            # Verify persistence rate is averaged across arms
-            model_a_rate = summary[summary['model'] == 'model_a']['confab_persistence_rate'].iloc[0]
-            assert abs(model_a_rate - 0.8) < 0.01  # (0.7 + 0.9) / 2 = 0.8
-
-            model_b_rate = summary[summary['model'] == 'model_b']['confab_persistence_rate'].iloc[0]
-            assert abs(model_b_rate - 0.55) < 0.01  # (0.3 + 0.8) / 2 = 0.55
+            # Values pass through exactly, per (model, arm) -- not averaged.
+            model_a_baseline = table[(table['model'] == 'model_a') & (table['arm'] == 'baseline')]['persist_rate'].iloc[0]
+            assert abs(model_a_baseline - 0.7) < 1e-9
+            model_a_fact_table = table[(table['model'] == 'model_a') & (table['arm'] == 'fact_table')]['persist_rate'].iloc[0]
+            assert abs(model_a_fact_table - 0.9) < 1e-9
         finally:
             os.unlink(temp_path)

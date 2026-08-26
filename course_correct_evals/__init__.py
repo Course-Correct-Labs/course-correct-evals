@@ -10,7 +10,7 @@ from .importers import (
     MirrorLoopImporter,
     ConfabulationImporter,
     ViolationStateImporter,
-    EchoChamberImporter,
+    EchoChamberImporter,  # noncanonical/opt-in — not part of the Observatory's canonical study set
 )
 
 from .analysis import CrossStudyAnalysis

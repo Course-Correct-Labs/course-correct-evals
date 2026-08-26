@@ -15,6 +15,21 @@ The following repositories contain the source data for this observatory:
 
 ## 1. Mirror Loop Study
 
+> **⚠ SUPERSEDED** (metrics/detection only — the repository structure and columns
+> below remain accurate). The "Collapse Detection" and "Convergence Point" entries
+> below, and the "Notes and Assumptions" TODO further down, describe this study's
+> *original, unverified* pre-audit assumption (a single-crossing "ΔI drops below 5%
+> of initial ΔI" detector). The manuscript-defined statistic, confirmed against the
+> released data, is different: a **plateau rate**, using a rolling-3-step trailing
+> average of the released `edit_change` column, first window whose mean falls below
+> τ (τ=0.05 primary, τ=0.02 secondary sensitivity), detected **per sequence** and
+> only aggregated afterward — never a crossing on a pooled/averaged trajectory. See
+> `analyze_mirror_loop()` / `detect_sequence_plateau()` in
+> `course_correct_evals/metrics/information_change.py` and the README's
+> [Mirror Loop's generic information-change utilities](../README.md#mirror-loops-generic-information-change-utilities)
+> section. The original assumption below is preserved as a historical record of what
+> was initially planned; it is not the canonical construct.
+
 ### Repository Structure
 - **Expected location**: `../mirror-loop/` or configurable path
 - **Primary data file**: `mirror_loop_results_all.csv`
@@ -94,6 +109,18 @@ The following repositories contain the source data for this observatory:
 ---
 
 ## 4. Echo Chamber Study
+
+> **⚠ SUPERSEDED.** Echo Chamber Zero has been decoupled from the canonical
+> Observatory evaluation set (canonical studies are now Mirror Loop, Recursive
+> Confabulation, and Violation State only — see `README.md`). The metric names
+> documented below — "Group Radicalization," "Self-Reinforcement Index," and
+> "Reasoning Entropy" — were incorrect. The correct definitions are:
+> **GR = Groundedness Ratio, SRI = Synthetic Recurrence Index, RE = Referential
+> Entropy**. Echo Chamber Zero is a percolation simulation on a provenance
+> network (synthetic epistemic drift), not a multi-agent belief-radicalization
+> study. The original text below is preserved as a historical record of what
+> was initially built and documented; it does not reflect current terminology
+> or the current (noncanonical/opt-in) architecture.
 
 ### Repository Structure
 - **Expected location**: `../echo-chamber-zero/` or configurable path

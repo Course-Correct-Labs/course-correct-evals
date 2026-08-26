@@ -18,15 +18,12 @@ from ..importers import (
 )
 
 from ..metrics import (
-    analyze_sequence,
-    analyze_dataframe_sequences,
+    analyze_mirror_loop_plateau,
+    compute_grounding_rebound,
     detect_compression,
     calculate_persistence_rate,
     calculate_intervention_effectiveness,
-    classify_responses_dataframe,
-    detect_contamination_dataframe,
-    analyze_contamination_spread,
-    calculate_refusal_rates,
+    analyze_violation_state_structured,
     analyze_echo_metrics,
     detect_threshold_crossing,
     calculate_convergence_statistics,
@@ -39,7 +36,15 @@ class CrossStudyAnalysis:
     Main analysis class for the CCL Reasoning Stability Observatory.
 
     This class coordinates data loading, metric calculation, and
-    cross-study comparisons across all CCL empirical studies.
+    cross-study comparisons across the three canonical CCL empirical
+    studies: Mirror Loop, Recursive Confabulation, and Violation State.
+
+    Echo Chamber Zero is retained here as noncanonical/opt-in provenance
+    support (see load_all_studies(include_echo_chamber=...) and
+    analyze_echo_chamber()). It is an independent theoretical/systemic
+    research project, not a peer behavioral model evaluation, and it is
+    never included in the canonical study count, leaderboard, dashboard,
+    or default exports.
     """
 
     def __init__(self):
@@ -75,28 +80,37 @@ class CrossStudyAnalysis:
         confabulation_path: Optional[str] = None,
         violation_state_path: Optional[str] = None,
         echo_chamber_path: Optional[str] = None,
-        fail_on_missing: bool = False
+        fail_on_missing: bool = False,
+        include_echo_chamber: bool = False
     ) -> Dict[str, bool]:
         """
-        Load data from all available studies.
+        Load data for the three canonical Observatory studies.
 
         Args:
             mirror_loop_path: Optional path to mirror loop data
             confabulation_path: Optional path to confabulation data
             violation_state_path: Optional path to violation state data
-            echo_chamber_path: Optional path to echo chamber data
-            fail_on_missing: If True, raise error if any data missing
+            echo_chamber_path: Optional path to echo chamber data (only
+                used if include_echo_chamber=True)
+            fail_on_missing: If True, raise error if any canonical data missing
+            include_echo_chamber: If True, also attempts to load Echo Chamber
+                Zero data as an OPTIONAL, NONCANONICAL addition. Echo Chamber
+                is never counted toward the canonical study total, never
+                affects canonical success/failure, and never appears in
+                model-comparison output regardless of this flag.
 
         Returns:
-            Dictionary indicating which studies loaded successfully
+            Dictionary indicating which studies loaded successfully. Always
+            contains 'echo_chamber' for backward compatibility, defaulting
+            to False unless include_echo_chamber=True and loading succeeds.
         """
         print("=" * 60)
-        print("LOADING CCL STUDIES")
+        print("LOADING CCL STUDIES (canonical: Mirror Loop, Recursive Confabulation, Violation State)")
         print("=" * 60)
 
-        # Try to load each study
+        # Try to load each canonical study
         # Mirror Loop
-        print("\n[1/4] Mirror Loop Study...")
+        print("\n[1/3] Mirror Loop Study...")
         importer = MirrorLoopImporter(data_path=mirror_loop_path)
         try:
             self.mirror_loop_data = importer.load_data()
@@ -115,7 +129,7 @@ class CrossStudyAnalysis:
             print(f"✗ Mirror Loop error: {e}")
 
         # Confabulation
-        print("\n[2/4] Recursive Confabulation Study...")
+        print("\n[2/3] Recursive Confabulation Study...")
         importer = ConfabulationImporter(data_path=confabulation_path)
         try:
             self.confabulation_data = importer.load_data()
@@ -134,7 +148,7 @@ class CrossStudyAnalysis:
             print(f"✗ Confabulation error: {e}")
 
         # Violation State
-        print("\n[3/4] Violation State Study...")
+        print("\n[3/3] Violation State Study...")
         importer = ViolationStateImporter(data_path=violation_state_path)
         try:
             self.violation_state_data = importer.load_data()
@@ -152,147 +166,268 @@ class CrossStudyAnalysis:
             warnings.warn(f"Error loading Violation State: {e}")
             print(f"✗ Violation State error: {e}")
 
-        # Echo Chamber
-        print("\n[4/4] Echo Chamber Study...")
-        importer = EchoChamberImporter(data_path=echo_chamber_path)
-        try:
-            self.echo_chamber_data = importer.load_data()
-            if self.echo_chamber_data is not None:
-                self._data_loaded['echo_chamber'] = True
-                self._data_sources['echo_chamber'] = importer.data_source
-                print("✓ Echo Chamber loaded successfully")
-            else:
+        # Echo Chamber Zero — OPTIONAL, NONCANONICAL. Not part of the
+        # Observatory's canonical study set; only attempted if the caller
+        # explicitly opts in. Never counted in the canonical study total.
+        if include_echo_chamber:
+            print("\n[optional/noncanonical] Echo Chamber Zero...")
+            importer = EchoChamberImporter(data_path=echo_chamber_path)
+            try:
+                self.echo_chamber_data = importer.load_data()
+                if self.echo_chamber_data is not None:
+                    self._data_loaded['echo_chamber'] = True
+                    self._data_sources['echo_chamber'] = importer.data_source
+                    print("✓ Echo Chamber Zero loaded (noncanonical, opt-in)")
+                else:
+                    if fail_on_missing:
+                        raise ValueError("Echo Chamber data not available")
+                    print("✗ Echo Chamber Zero not available")
+            except FileNotFoundError as e:
                 if fail_on_missing:
-                    raise ValueError("Echo Chamber data not available")
-                print("✗ Echo Chamber not available")
-        except FileNotFoundError as e:
-            if fail_on_missing:
-                raise
-            warnings.warn(f"Echo Chamber data not found: {e}")
-            print("✗ Echo Chamber not available")
-        except Exception as e:
-            if fail_on_missing:
-                raise
-            warnings.warn(f"Error loading Echo Chamber: {e}")
-            print(f"✗ Echo Chamber error: {e}")
+                    raise
+                warnings.warn(f"Echo Chamber data not found: {e}")
+                print("✗ Echo Chamber Zero not available")
+            except Exception as e:
+                if fail_on_missing:
+                    raise
+                warnings.warn(f"Error loading Echo Chamber: {e}")
+                print(f"✗ Echo Chamber Zero error: {e}")
 
         print("\n" + "=" * 60)
-        loaded_count = sum(self._data_loaded.values())
-        print(f"LOADED {loaded_count}/4 STUDIES")
+        canonical_studies = ('mirror_loop', 'confabulation', 'violation_state')
+        loaded_count = sum(self._data_loaded[s] for s in canonical_studies)
+        print(f"LOADED {loaded_count}/3 CANONICAL STUDIES")
+        if include_echo_chamber:
+            echo_status = "loaded" if self._data_loaded['echo_chamber'] else "not loaded"
+            print(f"Echo Chamber Zero (noncanonical, opt-in): {echo_status}")
         print("=" * 60)
 
         return self._data_loaded.copy()
 
     def analyze_mirror_loop(self) -> Dict[str, Any]:
-        """Analyze Mirror Loop study data."""
+        """
+        Analyze Mirror Loop study data using the manuscript-defined
+        rolling-three-step plateau statistic, computed PER SEQUENCE first
+        and aggregated afterward -- never a rolling average on a
+        pooled/averaged group trajectory.
+
+        Canonical measurement source: the released `edit_change` column
+        (NOT a recomputation from response text via delta_i_edit_distance
+        -- a direct numerical check established that recomputation does
+        not reproduce the released measurement).
+
+        PROVENANCE: the rolling-three-step plateau definition, the primary
+        tau=0.05 threshold, the tau=0.02 sensitivity threshold, the
+        per-sequence-then-aggregate interpretation, and the
+        grounding-rebound definition all come from the Mirror Loop
+        manuscript, supplied outside the cloned mirror-loop GitHub
+        repository (that repository explicitly does not include the
+        manuscript). Only the released numerical measurements themselves
+        are verified directly from data/mirror_loop_results_all.csv.
+
+        NOTE on novelty: the manuscript's n-gram novelty finding is
+        trajectory-based/per-iteration (a pooled curve decaying toward
+        near-zero by iterations 6-7), not a single dataset-wide mean. An
+        overall mean of the released `ngram_novelty` column was previously
+        exposed here as 'mean_ngram_novelty_overall'; it has been removed
+        because it was an Observatory-invented aggregate with no
+        manuscript-defined referent, not a reproduction of a reported
+        statistic. The released `ngram_novelty` column itself is untouched
+        and remains available (e.g. via self.mirror_loop_data or the
+        generic, noncanonical ngram_novelty() utility's own analysis) --
+        only the unsupported canonical scalar was removed. Implementing the
+        manuscript's actual trajectory-based novelty finding is a separate,
+        later scope decision.
+
+        Returns a dict with:
+          - 'plateau': the PRIMARY canonical result at tau=0.05 (drives the
+            leaderboard, canonical panel, and default notebook/report view).
+          - 'plateau_sensitivity_tau_0_02': an explicitly SECONDARY
+            sensitivity view. Never feeds the leaderboard and never
+            replaces/mutates the primary result.
+          - 'grounding_rebound': a DISTINCT manuscript finding (pooled
+            iteration-2-vs-4 comparison within the grounded condition) --
+            not derived from, and not folded into, the plateau structure.
+
+        There is no `mirror_collapse_rate` or "collapse" construct here --
+        that was Observatory terminology attached to a drifted single-value
+        first-crossing detector that did not reproduce the manuscript's
+        statistic; it has been removed, not aliased.
+        """
         if not self._data_loaded['mirror_loop']:
             return {"error": "Mirror Loop data not loaded"}
 
         print("\nAnalyzing Mirror Loop study...")
 
-        # Calculate ΔI metrics for all sequences
-        sequence_analysis = analyze_dataframe_sequences(
-            self.mirror_loop_data,
-            use_embeddings=False,  # Optional, can be slow
-            collapse_threshold=0.05
-        )
+        df = self.mirror_loop_data
 
-        # Overall statistics
-        total_sequences = len(sequence_analysis)
-        collapsed_sequences = sequence_analysis['collapse_detected'].sum()
-        collapse_rate = collapsed_sequences / total_sequences if total_sequences > 0 else 0.0
+        if 'edit_change' not in df.columns:
+            raise ValueError(
+                "Mirror Loop canonical analysis requires the released 'edit_change' "
+                "column; it is not present in this data. Canonical analysis does not "
+                "fall back to recomputing ΔI from response text."
+            )
 
-        # Model-level statistics
-        if 'model' in self.mirror_loop_data.columns:
-            model_stats = []
-            for model in self.mirror_loop_data['model'].unique():
-                model_df = self.mirror_loop_data[self.mirror_loop_data['model'] == model]
-                model_analysis = analyze_dataframe_sequences(model_df)
+        total_sequences = int(df['sequence_id'].nunique())
+        group_cols = ['model', 'condition'] if 'condition' in df.columns else ['model']
 
-                model_total = len(model_analysis)
-                model_collapsed = model_analysis['collapse_detected'].sum()
+        # PRIMARY canonical plateau result (tau=0.05).
+        plateau_primary = analyze_mirror_loop_plateau(df, tau=0.05, window=3, group_cols=group_cols)
 
-                model_stats.append({
-                    'model': model,
-                    'total_sequences': model_total,
-                    'collapsed_sequences': int(model_collapsed),
-                    'collapse_rate': float(model_collapsed / model_total) if model_total > 0 else 0.0,
-                    'mean_delta_i': float(model_analysis['delta_i_edit_mean'].mean()),
-                })
+        # Explicitly SECONDARY sensitivity view (tau=0.02).
+        plateau_sensitivity = analyze_mirror_loop_plateau(df, tau=0.02, window=3, group_cols=group_cols)
 
-            model_stats_df = pd.DataFrame(model_stats)
+        # DISTINCT finding: grounding rebound (pooled, iteration 2 vs 4,
+        # grounded condition only). Only computed if a 'condition' column
+        # with a 'grounded' value actually exists in this data.
+        if 'condition' in df.columns and (df['condition'] == 'grounded').any():
+            grounding_rebound = compute_grounding_rebound(df, condition='grounded')
         else:
-            model_stats_df = None
+            grounding_rebound = None
+
+        mean_delta_i_overall = float(df['edit_change'].mean())
 
         self.mirror_loop_analysis = {
             'total_sequences': total_sequences,
-            'collapsed_sequences': int(collapsed_sequences),
-            'collapse_rate': float(collapse_rate),
-            'mean_delta_i_overall': float(sequence_analysis['delta_i_edit_mean'].mean()),
-            'sequence_analysis': sequence_analysis,
-            'model_statistics': model_stats_df,
+            'mean_delta_i_overall': mean_delta_i_overall,
+            'plateau': plateau_primary,
+            'plateau_sensitivity_tau_0_02': plateau_sensitivity,
+            'grounding_rebound': grounding_rebound,
         }
 
-        print(f"✓ Analyzed {total_sequences} sequences, {collapsed_sequences} collapsed ({collapse_rate:.1%})")
+        print(f"✓ Analyzed {total_sequences} sequences (released edit_change; "
+              f"manuscript rolling-3-step plateau, tau=0.05 primary)")
+        for group_key, stats in plateau_primary['group_summary'].items():
+            label = ' / '.join(str(g) for g in group_key)
+            iqr_txt = ""
+            if stats['median_plateau_iteration'] is not None:
+                iqr_txt = (f", median iter {stats['median_plateau_iteration']:.0f} "
+                           f"(IQR {stats['plateau_iteration_iqr'][0]:.0f}-"
+                           f"{stats['plateau_iteration_iqr'][1]:.0f})")
+            print(f"  {label}: {stats['n_plateaued']}/{stats['n_sequences']} plateaued "
+                  f"({stats['plateau_rate']:.1%}){iqr_txt}")
+        if grounding_rebound is not None:
+            print(f"  Grounding rebound ({grounding_rebound['condition']}, "
+                  f"iter {grounding_rebound['iteration_from']}->{grounding_rebound['iteration_to']}): "
+                  f"{grounding_rebound['pct_increase']:.1f}% [manuscript-defined, distinct from plateau]")
 
         return self.mirror_loop_analysis
 
     def analyze_confabulation(self) -> Dict[str, Any]:
         """Analyze Recursive Confabulation study data.
 
-        Note: RC data is now aggregate (per-model summary), not per-conversation.
-        This method returns summary statistics from the published aggregate data.
+        Canonical path: the released model x arm table (preserved
+        unmodified by ConfabulationImporter -- one row per (model, arm),
+        3 models x 4 arms). No arm or model collapsing happens anywhere in
+        this method. Two distinct, separately-labeled views are derived
+        from that SAME table:
+
+          - pooled_intervention_comparison: the manuscript's N-weighted
+            pooled comparison across baseline/fact_table/belief_audit
+            (grounding_pilot deliberately excluded -- the source study's
+            own pooled comparison excludes it too).
+          - grounding_confabulation_heterogeneity: the model-specific
+            grounding_pilot finding, kept separate because the source
+            study reports this arm's effect as model-heterogeneous, not
+            poolable.
+
+        No per-model, across-arm scalar (an "average persistence rate for
+        this model") is computed or exposed anywhere in this method.
+
+        ----------------------------------------------------------------
+        METRIC IDENTITY GUARD -- do not conflate these two outcome
+        variables (source-verified against data/summary_by_model_arm.csv
+        in the recursive-confabulation repository):
+
+          - persist_rate: whether a fabrication PERSISTS after
+            correction/turns. Used for pooled_intervention_comparison
+            (baseline/fact_table/belief_audit -- the intervention
+            "backfire" finding).
+          - confab_rate: whether the model CONFABULATES at all,
+            initially. Used for grounding_confabulation_heterogeneity --
+            this is the field the source study's "grounding reduced
+            confabulation" finding (README.md, RC_publication_pack.md)
+            actually reports.
+
+        Grounding's effect on PERSISTENCE specifically is a real released
+        measurement too (visible via model_arm_table filtered to
+        arm == 'grounding_pilot', and via the
+        confab_persist_rate_grounding_pilot leaderboard column) -- but it
+        is NOT the manuscript's "grounding reduced confabulation" finding
+        and must never be presented as such. Using persist_rate for that
+        narrative would misstate it: GPT-4o-mini's persist_rate under
+        grounding (0.5) is HIGHER than its own baseline (0.3) --
+        persistence got worse, not better, under grounding for that
+        model. Do not substitute one field for the other in either
+        direction.
+        ----------------------------------------------------------------
         """
         if not self._data_loaded['confabulation']:
             return {"error": "Confabulation data not loaded"}
 
         print("\nAnalyzing Recursive Confabulation study...")
 
-        # Check if this is aggregate data
-        if 'confab_persistence_rate' in self.confabulation_data.columns:
-            # Aggregate mode: summarize from pre-computed metrics
-            mean_persistence = self.confabulation_data['confab_persistence_rate'].mean()
-            mean_confab = self.confabulation_data.get('confab_rate', pd.Series([None])).mean()
+        # Canonical model x arm table (the released summary_by_model_arm.csv
+        # schema, as returned unmodified by ConfabulationImporter).
+        if 'arm' in self.confabulation_data.columns and 'persist_rate' in self.confabulation_data.columns:
+            table = self.confabulation_data
 
-            # Build per-model statistics for backwards compatibility
-            by_model = {}
-            for _, row in self.confabulation_data.iterrows():
-                model = row['model']
-                by_model[model] = {
-                    'persistence_rate': float(row['confab_persistence_rate']),
-                    'confab_rate': float(row.get('confab_rate', 0)) if pd.notna(row.get('confab_rate')) else None,
-                    'sample_size': int(row.get('n', 0)) if pd.notna(row.get('n')) else None,
+            models = sorted(table['model'].unique().tolist())
+            arms = sorted(table['arm'].unique().tolist())
+
+            # Manuscript-defined pooled intervention comparison
+            # (baseline, fact_table, belief_audit only), N-weighted
+            # across models: sum(persist_rate * n) / sum(n), per arm.
+            pooled_arms = ['baseline', 'fact_table', 'belief_audit']
+            pooled_intervention_comparison = {}
+            for arm in pooled_arms:
+                arm_rows = table[table['arm'] == arm]
+                if len(arm_rows) == 0:
+                    continue
+                total_n = int(arm_rows['n'].sum())
+                weighted_persisting = (arm_rows['persist_rate'] * arm_rows['n']).sum()
+                pooled_intervention_comparison[arm] = {
+                    'n': total_n,
+                    'persist_rate': float(weighted_persisting / total_n) if total_n > 0 else 0.0,
                 }
 
-            # Backwards-compatible structure for notebook/plotting code
-            persistence_statistics = {
-                'overall': {
-                    'persistence_rate': float(mean_persistence),
-                    'total_fabrications': None,  # Not available in aggregate data
-                    'persistent_fabrications': None,  # Not available in aggregate data
-                },
-                'by_model': by_model,
+            # Model-specific grounding_pilot CONFABULATION finding -- NOT
+            # pooled. Uses confab_rate (see METRIC IDENTITY GUARD above),
+            # which is the field the source study's "Grounding reduced
+            # confabulation for GPT-4o mini only" finding (README.md,
+            # RC_publication_pack.md) actually reports. This is
+            # deliberately NOT persist_rate.
+            grounding_rows = table[table['arm'] == 'grounding_pilot']
+            grounding_confabulation_heterogeneity = {
+                row['model']: {'n': int(row['n']), 'confab_rate': float(row['confab_rate'])}
+                for _, row in grounding_rows.iterrows()
             }
 
             self.confabulation_analysis = {
-                'data_type': 'aggregate',
-                'num_models': len(self.confabulation_data),
-                'models': sorted(self.confabulation_data['model'].tolist()),
-                'mean_persistence_rate': float(mean_persistence),
-                'mean_confab_rate': float(mean_confab) if pd.notna(mean_confab) else None,
-                'persistence_by_model': self.confabulation_data[['model', 'confab_persistence_rate']].to_dict('records'),
-                # Backwards-compatible structure for notebook
-                'persistence_statistics': persistence_statistics,
-                'total_conversations': len(self.confabulation_data),  # Number of model records
-                'total_turns': None,  # Not applicable for aggregate data
-                'intervention_effectiveness': None,  # Not available in aggregate mode
+                'data_type': 'model_arm_table',
+                'model_arm_table': table,
+                'models': models,
+                'arms': arms,
+                'total_conversations': int(table['n'].sum()),
+                'pooled_intervention_comparison': pooled_intervention_comparison,
+                'grounding_confabulation_heterogeneity': grounding_confabulation_heterogeneity,
             }
 
-            print(f"✓ Aggregate data: {len(self.confabulation_data)} models")
-            print(f"  Mean persistence rate: {mean_persistence:.1%}")
+            print(f"✓ Model x arm table: {len(table)} rows ({len(models)} models x {len(arms)} arms)")
+            for arm, stats in pooled_intervention_comparison.items():
+                print(f"  Pooled {arm}: {stats['persist_rate']:.2%} (N={stats['n']}, N-weighted across models, persist_rate)")
+            print("  Grounding confabulation (model-specific, not pooled, confab_rate):")
+            for model, stats in grounding_confabulation_heterogeneity.items():
+                print(f"    {model}: {stats['confab_rate']:.2%} (N={stats['n']})")
+            print("  (Grounding's effect on persistence specifically is also a released")
+            print("   measurement -- see model_arm_table filtered to arm=='grounding_pilot' --")
+            print("   but it is NOT the manuscript's confabulation finding above.)")
 
         else:
-            # Legacy mode: per-conversation data (if someone provides it locally)
+            # Legacy mode: per-conversation data (if someone provides it locally).
+            # Unreachable via ConfabulationImporter -> load_all_studies(), since
+            # that importer now always returns the model x arm table; retained
+            # unmodified for defensive compatibility with manually-injected data.
             persistence_stats = calculate_persistence_rate(self.confabulation_data)
 
             # Intervention effectiveness
@@ -318,43 +453,40 @@ class CrossStudyAnalysis:
         return self.confabulation_analysis
 
     def analyze_violation_state(self) -> Dict[str, Any]:
-        """Analyze Violation State study data."""
+        """
+        Analyze Violation State study data using its structured
+        experimental fields (canonical) — see
+        analyze_violation_state_structured() for the Rule C collapsing
+        methodology and the raw/published provenance-layer distinction.
+
+        Does NOT canonically use the generic text-pattern classifier
+        (classify_response_type / detect_contamination and friends,
+        in metrics/session_contamination.py) — that classifier's phrase
+        library doesn't match this study's actual refusal phrasing and
+        remains retained only as noncanonical/legacy functionality.
+        """
         if not self._data_loaded['violation_state']:
             return {"error": "Violation State data not loaded"}
 
         print("\nAnalyzing Violation State study...")
 
-        # Classify responses if not already done
-        if 'response_type' not in self.violation_state_data.columns:
-            self.violation_state_data = classify_responses_dataframe(
-                self.violation_state_data,
-                content_col='content'
-            )
-
-        # Detect contamination if not already done
-        if 'contamination_detected' not in self.violation_state_data.columns:
-            self.violation_state_data = detect_contamination_dataframe(
-                self.violation_state_data,
-                content_col='content'
-            )
-
-        # Calculate refusal rates
-        refusal_stats = calculate_refusal_rates(
-            self.violation_state_data,
-            group_by_col='model' if 'model' in self.violation_state_data.columns else None
-        )
-
-        # Contamination spread analysis
-        contamination_stats = analyze_contamination_spread(self.violation_state_data)
+        structured = analyze_violation_state_structured(self.violation_state_data)
 
         self.violation_state_analysis = {
-            'refusal_statistics': refusal_stats,
-            'contamination_statistics': contamination_stats,
+            'structured': structured,
             'total_conversations': self.violation_state_data['conversation_id'].nunique(),
             'total_turns': len(self.violation_state_data),
         }
 
-        print(f"✓ Contamination rate: {contamination_stats['contamination_rate']:.1%}")
+        raw = structured['raw_structured_outcomes']
+        published = structured['published_aggregate']
+
+        for cond in published:
+            r = raw.get(cond, {})
+            p = published[cond]
+            print(f"  [{cond}] RAW structured outcomes (N={r.get('n', 0)}): {r.get('counts', {})}")
+            print(f"  [{cond}] PUBLISHED/HISTORICAL aggregate: {p['refused']}/{p['n']} refused "
+                  f"({p['refusal_rate']:.2%}) — historical rate-limit-as-refusal convention")
 
         return self.violation_state_analysis
 
@@ -420,14 +552,22 @@ class CrossStudyAnalysis:
             all_models.update(self.mirror_loop_data['model'].unique())
 
         if self._data_loaded['confabulation'] and 'model' in self.confabulation_data.columns:
-            # RC data is aggregate (per-model summary), not per-conversation
+            # RC data is the released model x arm table (one row per
+            # (model, arm)); each model may appear in multiple rows.
             all_models.update(self.confabulation_data['model'].unique())
 
-        if self._data_loaded['violation_state'] and 'model' in self.violation_state_data.columns:
-            all_models.update(self.violation_state_data['model'].unique())
+        # Violation State is intentionally excluded from the leaderboard:
+        # it is a single production system/interface study (not a
+        # cross-model comparison), and its canonical result is a
+        # contaminated-vs-control structured breakdown, not a per-model
+        # score. This exclusion is unconditional, even if Violation State
+        # data someday contains a 'model' column.
 
-        if self._data_loaded['echo_chamber'] and 'model' in self.echo_chamber_data.columns:
-            all_models.update(self.echo_chamber_data['model'].unique())
+        # Echo Chamber Zero is intentionally excluded from the leaderboard:
+        # it is a systemic/theoretical percolation framework, not a peer
+        # behavioral model evaluation, and has no model-comparison meaning.
+        # This exclusion is unconditional, independent of whether Echo
+        # Chamber data was separately opted into via load_all_studies().
 
         # Filter to requested models
         if models:
@@ -437,67 +577,60 @@ class CrossStudyAnalysis:
         for model in sorted(all_models):
             row = {'model': model}
 
-            # Mirror Loop: collapse rate
-            if self._data_loaded['mirror_loop'] and 'model' in self.mirror_loop_data.columns:
+            # Mirror Loop: manuscript-defined plateau rate (tau=0.05,
+            # PRIMARY canonical threshold only -- the tau=0.02 sensitivity
+            # view never feeds the leaderboard), condition-explicit. No
+            # legacy 'mirror_collapse_rate' -- removed, not aliased.
+            row['mirror_plateau_rate_grounded'] = None
+            row['mirror_plateau_rate_ungrounded'] = None
+            if (self._data_loaded['mirror_loop']
+                    and 'model' in self.mirror_loop_data.columns
+                    and 'edit_change' in self.mirror_loop_data.columns
+                    and 'condition' in self.mirror_loop_data.columns):
                 model_data = self.mirror_loop_data[self.mirror_loop_data['model'] == model]
                 if len(model_data) > 0:
-                    model_seq_analysis = analyze_dataframe_sequences(model_data)
-                    collapse_rate = model_seq_analysis['collapse_detected'].mean()
-                    row['mirror_collapse_rate'] = float(collapse_rate)
-                else:
-                    row['mirror_collapse_rate'] = None
-            else:
-                row['mirror_collapse_rate'] = None
+                    model_plateau = analyze_mirror_loop_plateau(
+                        model_data, tau=0.05, window=3, group_cols=['condition']
+                    )
+                    for (condition,), stats in model_plateau['group_summary'].items():
+                        if condition in ('grounded', 'ungrounded'):
+                            row[f'mirror_plateau_rate_{condition}'] = stats['plateau_rate']
 
-            # Confabulation: persistence rate
-            # Note: RC data is aggregate (per-model summary from summary_by_model_arm.csv)
-            if self._data_loaded['confabulation'] and 'model' in self.confabulation_data.columns:
-                # Check if this is aggregate data (has confab_persistence_rate column)
-                if 'confab_persistence_rate' in self.confabulation_data.columns:
-                    # Aggregate mode: look up metric directly
-                    model_row = self.confabulation_data[self.confabulation_data['model'] == model]
-                    if len(model_row) > 0:
-                        row['confab_persistence_rate'] = float(model_row['confab_persistence_rate'].iloc[0])
+            # Confabulation: four arm-explicit columns, each a direct
+            # released (model, arm).persist_rate measurement -- no
+            # averaging across arms, no Observatory-derived model score.
+            # These are measurements under distinct experimental
+            # conditions, not four interchangeable global model-quality
+            # scores or independent ranking metrics.
+            #
+            # NOTE (metric identity): these four columns are PERSISTENCE
+            # measurements (persist_rate). They are not the manuscript's
+            # "grounding reduced confabulation" finding, which is based on
+            # confab_rate -- see grounding_confabulation_heterogeneity in
+            # analyze_confabulation(). confab_persist_rate_grounding_pilot
+            # is a real released measurement in its own right; it must not
+            # be read as evidence of grounding's confabulation-reduction
+            # effect.
+            confab_arm_columns = {
+                'confab_persist_rate_baseline': 'baseline',
+                'confab_persist_rate_fact_table': 'fact_table',
+                'confab_persist_rate_belief_audit': 'belief_audit',
+                'confab_persist_rate_grounding_pilot': 'grounding_pilot',
+            }
+            if (self._data_loaded['confabulation']
+                    and 'model' in self.confabulation_data.columns
+                    and 'arm' in self.confabulation_data.columns
+                    and 'persist_rate' in self.confabulation_data.columns):
+                model_rows = self.confabulation_data[self.confabulation_data['model'] == model]
+                for col_name, arm_name in confab_arm_columns.items():
+                    arm_row = model_rows[model_rows['arm'] == arm_name]
+                    if len(arm_row) > 0:
+                        row[col_name] = float(arm_row['persist_rate'].iloc[0])
                     else:
-                        row['confab_persistence_rate'] = None
-                else:
-                    # Legacy mode: per-conversation data (if someone provides it locally)
-                    model_data = self.confabulation_data[self.confabulation_data['model'] == model]
-                    if len(model_data) > 0:
-                        pers_stats = calculate_persistence_rate(model_data)
-                        row['confab_persistence_rate'] = float(pers_stats['overall']['persistence_rate'])
-                    else:
-                        row['confab_persistence_rate'] = None
+                        row[col_name] = None
             else:
-                row['confab_persistence_rate'] = None
-
-            # Violation State: contamination rate
-            if self._data_loaded['violation_state'] and 'model' in self.violation_state_data.columns:
-                model_data = self.violation_state_data[self.violation_state_data['model'] == model]
-                if len(model_data) > 0:
-                    if 'contamination_detected' not in model_data.columns:
-                        model_data = detect_contamination_dataframe(model_data)
-                    contam_rate = model_data['contamination_detected'].mean()
-                    row['violation_contamination_rate'] = float(contam_rate)
-                else:
-                    row['violation_contamination_rate'] = None
-            else:
-                row['violation_contamination_rate'] = None
-
-            # Echo Chamber: mean GR/SRI
-            if self._data_loaded['echo_chamber'] and 'model' in self.echo_chamber_data.columns:
-                model_data = self.echo_chamber_data[self.echo_chamber_data['model'] == model]
-                if len(model_data) > 0:
-                    if 'GR' in model_data.columns:
-                        row['echo_mean_GR'] = float(model_data['GR'].mean())
-                    if 'SRI' in model_data.columns:
-                        row['echo_mean_SRI'] = float(model_data['SRI'].mean())
-                else:
-                    row['echo_mean_GR'] = None
-                    row['echo_mean_SRI'] = None
-            else:
-                row['echo_mean_GR'] = None
-                row['echo_mean_SRI'] = None
+                for col_name in confab_arm_columns:
+                    row[col_name] = None
 
             leaderboard_data.append(row)
 
@@ -508,31 +641,66 @@ class CrossStudyAnalysis:
         return leaderboard_df
 
     def get_summary(self) -> Dict[str, Any]:
-        """Get summary of all loaded studies and analyses."""
+        """Get summary of the three canonical studies and their analyses.
+
+        Note: 'studies_loaded' retains the dormant 'echo_chamber' key for
+        backward compatibility, but 'total_studies_loaded' counts only the
+        three canonical studies (Mirror Loop, Recursive Confabulation,
+        Violation State) regardless of whether Echo Chamber was separately
+        opted into.
+        """
+        canonical_studies = ('mirror_loop', 'confabulation', 'violation_state')
         summary = {
             'studies_loaded': self._data_loaded,
-            'total_studies_loaded': sum(self._data_loaded.values()),
+            'total_studies_loaded': sum(self._data_loaded[s] for s in canonical_studies),
         }
 
         # Add analysis summaries if available
         if self.mirror_loop_analysis:
+            # Canonical: no 'collapse_rate' scalar. 'plateau' is the
+            # PRIMARY (tau=0.05) manuscript-defined per-sequence-then-
+            # aggregated result; 'plateau_sensitivity_tau_0_02' is
+            # explicitly secondary; 'grounding_rebound' is a distinct
+            # finding, not derived from the plateau structure.
+            def _stringify_group_keys(group_summary):
+                # group_summary keys are tuples (e.g. (model, condition)),
+                # which json.dump cannot serialize as object keys.
+                return {
+                    ' / '.join(str(g) for g in group_key): stats
+                    for group_key, stats in group_summary.items()
+                }
+
             summary['mirror_loop'] = {
                 'total_sequences': self.mirror_loop_analysis['total_sequences'],
-                'collapse_rate': self.mirror_loop_analysis['collapse_rate'],
+                'mean_delta_i_overall': self.mirror_loop_analysis['mean_delta_i_overall'],
+                'plateau_group_summary': _stringify_group_keys(
+                    self.mirror_loop_analysis['plateau']['group_summary']),
+                'plateau_sensitivity_tau_0_02_group_summary': _stringify_group_keys(
+                    self.mirror_loop_analysis['plateau_sensitivity_tau_0_02']['group_summary']),
+                'grounding_rebound': self.mirror_loop_analysis['grounding_rebound'],
             }
 
         if self.confabulation_analysis:
-            # Handle both aggregate and per-conversation data
-            if self.confabulation_analysis.get('data_type') == 'aggregate':
+            if self.confabulation_analysis.get('data_type') == 'model_arm_table':
+                # Canonical: no across-arm persistence scalar is exposed.
+                # 'pooled_intervention_comparison' (persist_rate) is the
+                # manuscript's N-weighted baseline/fact_table/belief_audit
+                # comparison; 'grounding_confabulation_heterogeneity'
+                # (confab_rate) is the model-specific grounding_pilot
+                # finding, kept separate. See the METRIC IDENTITY GUARD in
+                # analyze_confabulation() -- these two use different
+                # outcome variables and must not be substituted.
                 summary['confabulation'] = {
-                    'data_type': 'aggregate',
-                    'num_models': self.confabulation_analysis['num_models'],
-                    'mean_persistence_rate': self.confabulation_analysis['mean_persistence_rate'],
-                    # Include these keys for backwards compatibility with report generation
+                    'data_type': 'model_arm_table',
+                    'models': self.confabulation_analysis['models'],
+                    'arms': self.confabulation_analysis['arms'],
                     'total_conversations': self.confabulation_analysis.get('total_conversations'),
-                    'persistence_rate': self.confabulation_analysis.get('mean_persistence_rate', 0),
+                    'pooled_intervention_comparison': self.confabulation_analysis['pooled_intervention_comparison'],
+                    'grounding_confabulation_heterogeneity': self.confabulation_analysis['grounding_confabulation_heterogeneity'],
                 }
             else:
+                # Legacy per-conversation mode; unreachable via the normal
+                # importer path (see analyze_confabulation()).
                 summary['confabulation'] = {
                     'data_type': 'per_conversation',
                     'total_conversations': self.confabulation_analysis.get('total_conversations', 0),
@@ -540,9 +708,11 @@ class CrossStudyAnalysis:
                 }
 
         if self.violation_state_analysis:
+            structured = self.violation_state_analysis['structured']
             summary['violation_state'] = {
                 'total_conversations': self.violation_state_analysis['total_conversations'],
-                'contamination_rate': self.violation_state_analysis['contamination_statistics']['contamination_rate'],
+                'raw_structured_outcomes': structured['raw_structured_outcomes'],
+                'published_aggregate': structured['published_aggregate'],
             }
 
         if self.echo_chamber_analysis:
@@ -554,9 +724,14 @@ class CrossStudyAnalysis:
 
     def get_data_source_summary(self) -> Dict[str, Dict[str, Any]]:
         """
-        Get data source status for all studies.
+        Get data source status for the three canonical studies.
 
         Useful for debugging and transparency about where data was loaded from.
+
+        Echo Chamber Zero is intentionally excluded from this canonical
+        summary (it is not a canonical study). Its status, when opted into
+        via load_all_studies(include_echo_chamber=True), can be inspected
+        directly via self._data_loaded['echo_chamber'] / self._data_sources['echo_chamber'].
 
         Returns:
             Dictionary mapping study names to their load status and source.
@@ -567,7 +742,7 @@ class CrossStudyAnalysis:
         """
         summary = {}
 
-        for study_name in ['mirror_loop', 'confabulation', 'violation_state', 'echo_chamber']:
+        for study_name in ['mirror_loop', 'confabulation', 'violation_state']:
             summary[study_name] = {
                 'loaded': self._data_loaded[study_name],
                 'source': self._data_sources[study_name] if self._data_sources[study_name] else 'not_loaded'

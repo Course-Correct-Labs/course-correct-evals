@@ -268,3 +268,186 @@ def analyze_dataframe_sequences(
         results.append(analysis)
 
     return pd.DataFrame(results)
+
+
+# ---------------------------------------------------------------------------
+# Canonical, released-measurement-based Mirror Loop plateau analysis.
+#
+# The functions above (delta_i_edit_distance, ngram_novelty, analyze_sequence,
+# analyze_dataframe_sequences) recompute ΔI/novelty from raw response text.
+# They remain valid generic/noncanonical utilities, but they are NOT used to
+# reconstruct Mirror Loop's canonical released measurements: a direct
+# numerical check established that delta_i_edit_distance() does not
+# reproduce the released edit_change column, and a separate check
+# established that ngram_novelty() does not reproduce the released
+# ngram_novelty column either. The functions below use the released columns
+# directly.
+#
+# PROVENANCE: the rolling-three-step plateau definition, the primary
+# tau=0.05 threshold, the tau=0.02 sensitivity threshold, the
+# per-sequence-then-aggregate interpretation, and the grounding-rebound
+# definition all come from the Mirror Loop manuscript, which is supplied
+# outside the cloned mirror-loop GitHub repository (that repository
+# explicitly states the manuscript is not included in it). Only the
+# released numerical measurements themselves (edit_change, ngram_novelty)
+# are verified directly from data/mirror_loop_results_all.csv.
+# ---------------------------------------------------------------------------
+
+def detect_sequence_plateau(
+    seq_df: pd.DataFrame,
+    tau: float = 0.05,
+    window: int = 3,
+    iteration_col: str = 'iteration',
+    value_col: str = 'edit_change',
+) -> Optional[int]:
+    """
+    Manuscript-defined per-sequence plateau detection.
+
+    Sorts the sequence by iteration, drops rows with missing ΔI (iteration 0
+    has no defined edit_change), computes a TRAILING rolling `window`-step
+    mean of the released ΔI values, and returns the iteration at the END of
+    the first window whose mean is strictly below `tau`.
+
+    The window-label convention (trailing, labeled at the window's last
+    iteration) is not independently specified in the manuscript excerpt
+    available for this implementation -- it is the standard trailing
+    rolling-average convention, and it exactly reproduces the manuscript's
+    reported GPT-4o-mini x ungrounded reference result (9/24 plateaued,
+    median iteration 5, IQR 5-6) when applied to the released data. That
+    reproduction is the evidence for this specific convention, not an
+    independent manuscript citation for the labeling rule itself.
+
+    Returns:
+        The plateau iteration (int), or None if no qualifying window exists
+        (the sequence is classified as NOT plateaued -- never a fabricated
+        iteration).
+    """
+    seq_df = seq_df.sort_values(iteration_col)
+    di = seq_df.set_index(iteration_col)[value_col]
+    di = di[np.isfinite(di)]
+    if len(di) < window:
+        return None
+    rolling_avg = di.rolling(window).mean()
+    below_tau = rolling_avg[rolling_avg < tau]
+    if len(below_tau) == 0:
+        return None
+    return int(below_tau.index[0])
+
+
+def analyze_mirror_loop_plateau(
+    df: pd.DataFrame,
+    tau: float = 0.05,
+    window: int = 3,
+    sequence_id_col: str = 'sequence_id',
+    iteration_col: str = 'iteration',
+    value_col: str = 'edit_change',
+    group_cols: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Canonical Mirror Loop plateau analysis: PER-SEQUENCE detection first,
+    then aggregation across sequences within each group. Never computes a
+    rolling average on a pooled/averaged group trajectory.
+
+    Args:
+        df: released Mirror Loop data (one row per sequence x iteration),
+            using the released `value_col` (edit_change) as ΔI.
+        tau: plateau threshold (strict less-than).
+        window: rolling window size (manuscript: 3).
+        group_cols: columns defining the aggregation groups (default:
+            ['model', 'condition'], matching the manuscript's own reporting
+            granularity, e.g. "GPT-4o-mini ungrounded").
+
+    Returns:
+        Dict with:
+          - 'sequence_results': DataFrame, one row per sequence, columns
+            group_cols + [sequence_id_col, 'plateaued', 'plateau_iteration'].
+          - 'group_summary': dict keyed by the group tuple, each value a
+            dict with n_sequences, n_plateaued, plateau_rate,
+            median_plateau_iteration, plateau_iteration_iqr (the latter two
+            computed ONLY over the plateaued sequences; the denominator
+            n_sequences/n_plateaued is preserved separately, never
+            manufactured by assigning fake iterations to non-plateauing
+            sequences).
+    """
+    if group_cols is None:
+        group_cols = ['model', 'condition']
+
+    seq_rows = []
+    for seq_id, seq_df in df.groupby(sequence_id_col):
+        plateau_iter = detect_sequence_plateau(
+            seq_df, tau=tau, window=window,
+            iteration_col=iteration_col, value_col=value_col,
+        )
+        row = {sequence_id_col: seq_id, 'plateaued': plateau_iter is not None,
+               'plateau_iteration': plateau_iter}
+        for gc in group_cols:
+            row[gc] = seq_df[gc].iloc[0]
+        seq_rows.append(row)
+
+    sequence_results = pd.DataFrame(seq_rows)
+
+    group_summary: Dict[Any, Dict[str, Any]] = {}
+    for group_key, group_df in sequence_results.groupby(group_cols):
+        n_sequences = len(group_df)
+        plateaued_df = group_df[group_df['plateaued']]
+        n_plateaued = len(plateaued_df)
+        plateau_iters = plateaued_df['plateau_iteration'].dropna().tolist()
+
+        summary = {
+            'n_sequences': int(n_sequences),
+            'n_plateaued': int(n_plateaued),
+            'plateau_rate': float(n_plateaued / n_sequences) if n_sequences > 0 else 0.0,
+            'median_plateau_iteration': float(np.median(plateau_iters)) if plateau_iters else None,
+            'plateau_iteration_iqr': (
+                (float(np.percentile(plateau_iters, 25)), float(np.percentile(plateau_iters, 75)))
+                if plateau_iters else None
+            ),
+        }
+        group_summary[group_key if isinstance(group_key, tuple) else (group_key,)] = summary
+
+    return {
+        'sequence_results': sequence_results,
+        'group_summary': group_summary,
+        'group_cols': group_cols,
+        'tau': tau,
+        'window': window,
+    }
+
+
+def compute_grounding_rebound(
+    df: pd.DataFrame,
+    condition: str = 'grounded',
+    condition_col: str = 'condition',
+    iteration_col: str = 'iteration',
+    value_col: str = 'edit_change',
+    iteration_from: int = 2,
+    iteration_to: int = 4,
+) -> Dict[str, Any]:
+    """
+    Manuscript-defined grounding-rebound statistic: DISTINCT from plateau
+    detection. Pools released ΔI across all sequences within the given
+    condition (default 'grounded'), takes the pooled mean at iteration_from
+    and iteration_to, and reports the percentage increase. This is a
+    pooled two-point comparison, not a per-sequence detection-then-aggregate
+    statistic -- do not derive it from, or fold it into, the plateau
+    structure.
+
+    Returns:
+        Dict with 'condition', 'iteration_from', 'iteration_to',
+        'delta_i_from', 'delta_i_to', 'pct_increase'.
+    """
+    sub = df[df[condition_col] == condition]
+    pooled = sub.groupby(iteration_col)[value_col].mean()
+
+    delta_i_from = float(pooled.loc[iteration_from])
+    delta_i_to = float(pooled.loc[iteration_to])
+    pct_increase = ((delta_i_to - delta_i_from) / delta_i_from) * 100 if delta_i_from else None
+
+    return {
+        'condition': condition,
+        'iteration_from': iteration_from,
+        'iteration_to': iteration_to,
+        'delta_i_from': delta_i_from,
+        'delta_i_to': delta_i_to,
+        'pct_increase': pct_increase,
+    }

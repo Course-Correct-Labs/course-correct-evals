@@ -1,7 +1,16 @@
 """
-Echo Chamber Study Data Importer
+Echo Chamber Zero Study Data Importer
 
-Loads simulation data from the Echo Chamber study.
+NONCANONICAL / OPT-IN: Echo Chamber Zero is an independent Course Correct
+Labs theoretical/systemic research project (a percolation-based model of
+synthetic epistemic drift on a provenance graph). It is NOT part of the
+canonical Reasoning Stability Observatory evaluation set (Mirror Loop,
+Recursive Confabulation, Violation State) and is not a peer behavioral
+model evaluation. This importer is retained for provenance/backward
+compatibility and is only used if explicitly requested via
+CrossStudyAnalysis.load_all_studies(include_echo_chamber=True).
+
+Loads simulation data from the Echo Chamber Zero study.
 This importer is READ ONLY - it does not modify source data.
 
 IMPORTANT: This study includes PRECOMPUTED metrics (GR, SRI, RE) in the CSV.
@@ -24,14 +33,17 @@ except ImportError:
 
 class EchoChamberImporter:
     """
-    Importer for Echo Chamber study data.
+    Importer for Echo Chamber Zero study data.
 
-    This study examines belief convergence and radicalization in multi-agent systems.
+    NONCANONICAL / OPT-IN — see module docstring. This study models
+    synthetic epistemic drift as a percolation process on a provenance
+    graph (configuration-model network simulation), not multi-agent
+    belief convergence/radicalization.
 
     CRITICAL: The simulation_results.csv contains PRECOMPUTED metrics:
-    - GR (Group Radicalization)
-    - SRI (Self-Reinforcement Index)
-    - RE (Reasoning Entropy)
+    - GR (Groundedness Ratio)
+    - SRI (Synthetic Recurrence Index)
+    - RE (Referential Entropy)
 
     We use these precomputed values directly as ground truth.
     """

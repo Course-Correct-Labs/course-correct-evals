@@ -1,13 +1,19 @@
 """
 Recursive Confabulation Study Data Importer
 
-Loads aggregate metrics from the Recursive Confabulation study.
-This study publishes IRR-validated statistics, not raw conversation sequences.
+Loads the released model×arm summary table from the Recursive Confabulation
+study. This study publishes IRR-validated per-model, per-intervention-arm
+statistics, not raw conversation sequences.
 This importer is READ ONLY - it does not modify source data.
 
-NOTE: RC publishes aggregate metrics (confab rates, persistence rates) per model
-and intervention arm, not per-turn sequences. We compute a summary persistence
-metric per model for cross-study comparison.
+CANONICAL REPRESENTATION: the released summary_by_model_arm.csv (one row per
+(model, arm), 3 models x 4 arms = 12 rows) is the single canonical source
+representation. This importer preserves it unmodified -- it does NOT group
+across model or arm, and does NOT rename persist_rate into a collapsed
+metric. Any pooled or model-specific views (e.g. the manuscript's N-weighted
+three-arm intervention comparison, or the model-specific grounding_pilot
+finding) are computed downstream, from this same preserved table, in
+CrossStudyAnalysis.analyze_confabulation() -- not here.
 """
 
 import os
@@ -29,21 +35,17 @@ class ConfabulationImporter:
     Importer for Recursive Confabulation study data.
 
     This study examines fabrication persistence across conversational turns
-    with different intervention strategies. The public repo exposes aggregate
-    statistics per model and intervention arm, not raw sequences.
+    under four intervention arms (baseline, fact_table, belief_audit,
+    grounding_pilot), for 3 models. The public repo exposes per-model,
+    per-intervention-arm statistics (summary_by_model_arm.csv), not raw
+    per-turn sequences.
 
-    We load summary_by_model_arm.csv and compute an aggregate persistence rate
-    per model for inclusion in cross-study comparisons.
-
-    Persistence Rate Metric:
-    ------------------------
-    The confab_persistence_rate is derived from the summary_by_model_arm.csv file,
-    which contains per-model, per-intervention-arm statistics including:
-    - confab_rate: Initial confabulation rate
-    - persist_rate: Persistence rate (how often confabulations persist)
-
-    We compute the average persistence rate across all intervention arms for each model.
-    This gives a single scalar metric per model suitable for cross-study comparison.
+    load_data() returns the released model x arm table UNMODIFIED (one row
+    per (model, arm), 12 rows total) -- no grouping across model or arm, no
+    collapsed/renamed metric. This is the single canonical source
+    representation; downstream analysis (CrossStudyAnalysis) derives the
+    manuscript's pooled intervention comparison and the model-specific
+    grounding_pilot finding from this same table.
     """
 
     # GitHub URL for aggregate summary data
@@ -65,13 +67,16 @@ class ConfabulationImporter:
 
     def load_data(self) -> Optional[pd.DataFrame]:
         """
-        Load aggregate confabulation data from RC study.
+        Load the released model x arm summary table from the RC study.
 
-        Returns per-model persistence metrics suitable for cross-study comparison.
+        Returns the table UNMODIFIED: one row per (model, arm), preserving
+        every released column (model, arm, n, confab_rate, confab_ci,
+        persist_rate, persist_ci, latency_mean, latency_std, blame_mean,
+        blame_std). No aggregation across model or arm is performed here.
 
         Returns:
-            DataFrame with columns: model, confab_persistence_rate
-            Or None if data unavailable
+            DataFrame with the released model x arm schema, or None if
+            data unavailable.
         """
         # Try explicit path first
         if self.data_path and os.path.exists(self.data_path):
@@ -79,7 +84,7 @@ class ConfabulationImporter:
             try:
                 df = pd.read_csv(self.data_path)
                 self.data_source = f"explicit_path:{self.data_path}"
-                return self._compute_model_summary(df)
+                return self._validate_model_arm_table(df)
             except Exception as e:
                 print(f"[ConfabulationImporter] Failed to load from {self.data_path}: {e}")
 
@@ -91,7 +96,7 @@ class ConfabulationImporter:
                 resp.raise_for_status()
                 df = pd.read_csv(io.StringIO(resp.text))
                 self.data_source = f"remote:{self.SUMMARY_URL}"
-                return self._compute_model_summary(df)
+                return self._validate_model_arm_table(df)
             except Exception as e:
                 print(f"[ConfabulationImporter] GitHub fallback failed: {e}")
 
@@ -100,21 +105,25 @@ class ConfabulationImporter:
         print("[ConfabulationImporter] Data not available from any source")
         return None
 
-    def _compute_model_summary(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _validate_model_arm_table(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Compute per-model persistence rate from summary_by_model_arm.csv.
+        Validate and return the released model x arm table UNMODIFIED.
 
-        The input CSV has columns: model, arm, n, confab_rate, persist_rate, ...
-        We compute the mean persistence rate across all arms for each model.
+        The input CSV has columns: model, arm, n, confab_rate, confab_ci,
+        persist_rate, persist_ci, latency_mean, latency_std, blame_mean,
+        blame_std -- one row per (model, arm). This is the single canonical
+        source representation: no grouping, no renaming, no collapsing
+        across model or arm happens here. Pooled/model-specific downstream
+        views are computed elsewhere from this same preserved table.
 
         Args:
             df: Raw summary_by_model_arm DataFrame
 
         Returns:
-            DataFrame with columns: model, confab_persistence_rate
+            The same DataFrame, validated, with columns/rows unmodified.
         """
         # Validate required columns exist
-        required_cols = ['model', 'persist_rate']
+        required_cols = ['model', 'arm', 'n', 'persist_rate']
         missing = [col for col in required_cols if col not in df.columns]
         if missing:
             raise ValueError(
@@ -122,33 +131,28 @@ class ConfabulationImporter:
                 f"Available columns: {list(df.columns)}"
             )
 
-        # Group by model and compute mean persistence rate across all arms
-        model_summary = df.groupby('model').agg({
-            'persist_rate': 'mean',
-            'confab_rate': 'mean',  # Also include confab rate for reference
-            'n': 'sum'  # Total sample size
-        }).reset_index()
+        self.summary_df = df
+        print(f"[ConfabulationImporter] ✓ Loaded released model x arm table: "
+              f"{len(df)} rows ({df['model'].nunique()} models x {df['arm'].nunique()} arms)")
 
-        # Rename to match Observatory naming convention
-        model_summary = model_summary.rename(columns={
-            'persist_rate': 'confab_persistence_rate',
-        })
-
-        self.summary_df = model_summary
-        print(f"[ConfabulationImporter] ✓ Loaded aggregate metrics for {len(model_summary)} models")
-
-        return model_summary
+        return df
 
     def get_data_info(self) -> Dict[str, Any]:
-        """Get summary information about the loaded data."""
+        """Get summary information about the loaded data.
+
+        Deliberately does NOT report any across-arm persistence scalar --
+        the released table has no single "the persistence rate"; see
+        CrossStudyAnalysis.analyze_confabulation() for the manuscript's
+        pooled comparison and the model-specific grounding finding.
+        """
         if self.summary_df is None:
             return {"status": "not loaded"}
 
         info = {
-            "status": "loaded (aggregate)",
-            "num_models": len(self.summary_df),
-            "models": sorted(self.summary_df['model'].tolist()),
-            "mean_persistence_rate": float(self.summary_df['confab_persistence_rate'].mean()),
+            "status": "loaded (model x arm table)",
+            "num_rows": len(self.summary_df),
+            "models": sorted(self.summary_df['model'].unique().tolist()),
+            "arms": sorted(self.summary_df['arm'].unique().tolist()),
             "data_source": self.data_source,
         }
 

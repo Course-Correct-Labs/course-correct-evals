@@ -10,12 +10,16 @@ from course_correct_evals.metrics import (
     delta_i_edit_distance,
     ngram_novelty,
     analyze_sequence,
+    detect_sequence_plateau,
+    analyze_mirror_loop_plateau,
     word_count,
     concreteness_score,
     proper_noun_density,
     detect_compression,
     classify_response_type,
     detect_contamination,
+    collapse_violation_state_prompts,
+    analyze_violation_state_structured,
 )
 
 
@@ -69,6 +73,106 @@ class TestInformationChange:
         assert 'ngram_novelty' in analysis
         assert 'collapse_detected' in analysis
         assert len(analysis['delta_i_edit']) == len(texts) - 1
+
+
+class TestMirrorLoopPlateau:
+    """
+    Phase 5 discriminating tests for the manuscript-defined rolling-3-step
+    plateau statistic (detect_sequence_plateau / analyze_mirror_loop_plateau).
+    These construct synthetic sequences engineered to distinguish the new
+    algorithm's actual behavior from plausible-but-wrong alternatives, not
+    merely to check that it runs.
+    """
+
+    def test_isolated_dip_triggers_old_detector_but_not_new_rolling_detector(self):
+        """An isolated single-step ΔI dip to 0, surrounded by high values,
+        must trip the legacy single-value collapse detector (analyze_sequence
+        with its default collapse_threshold) but must NOT trigger the
+        manuscript's rolling-3-step mean detector, since no 3-step trailing
+        window average dips below tau. Both algorithms run on the exact
+        same underlying ΔI pattern -- constructed via exact, controlled
+        Levenshtein distances (delta_i_edit_distance is normalized edit
+        distance / max_len), not approximated."""
+        # texts -> normalized edit distances (delta_i_edit): [1.0, 0.0, 1.0, 1.0]
+        texts = ["a" * 10, "b" * 10, "b" * 10, "c" * 10, "d" * 10]
+        legacy = analyze_sequence(texts)  # default collapse_threshold=0.05
+        assert legacy['delta_i_edit'] == [1.0, 0.0, 1.0, 1.0]
+        assert legacy['collapse_detected'] is True
+        assert legacy['collapse_iteration'] == 2
+
+        # Same numeric pattern fed to the new rolling-3-step detector
+        # (iteration i's edit_change = delta_i_edit[i-1]).
+        seq_df = pd.DataFrame({
+            'iteration': [1, 2, 3, 4],
+            'edit_change': legacy['delta_i_edit'],
+        })
+        assert detect_sequence_plateau(seq_df, tau=0.05, window=3) is None
+
+    def test_never_plateaus_returns_none_not_fabricated_iteration(self):
+        """A sequence whose ΔI never sustains a low rolling-3-step average
+        must report 'not plateaued' (None), never a fabricated iteration
+        such as the last iteration or 0."""
+        seq_df = pd.DataFrame({
+            'iteration': [1, 2, 3, 4, 5, 6],
+            'edit_change': [0.5, 0.45, 0.4, 0.5, 0.45, 0.4],
+        })
+        assert detect_sequence_plateau(seq_df, tau=0.05, window=3) is None
+
+        df = pd.DataFrame({
+            'iteration': list(seq_df['iteration']) * 1,
+            'edit_change': list(seq_df['edit_change']),
+            'sequence_id': ['s1'] * 6,
+            'model': ['m'] * 6,
+            'condition': ['grounded'] * 6,
+        })
+        result = analyze_mirror_loop_plateau(df, tau=0.05, window=3)
+        stats = result['group_summary'][('m', 'grounded')]
+        assert stats['n_plateaued'] == 0
+        assert stats['median_plateau_iteration'] is None
+        assert stats['plateau_iteration_iqr'] is None
+
+    def test_plateau_iteration_is_windows_last_index_not_first(self):
+        """The plateau iteration must be reported at the qualifying
+        window's LAST iteration (pandas trailing-rolling convention), not
+        the window's first iteration and not some other index."""
+        # iter:        1     2     3     4     5
+        # edit_change: 0.5   0.5   0.01  0.01  0.01
+        # rolling-3 mean at iter3 = mean(0.5,0.5,0.01)=0.34   (not < 0.05)
+        # rolling-3 mean at iter4 = mean(0.5,0.01,0.01)=0.173 (not < 0.05)
+        # rolling-3 mean at iter5 = mean(0.01,0.01,0.01)=0.01 (< 0.05) <- first qualifying window
+        seq_df = pd.DataFrame({
+            'iteration': [1, 2, 3, 4, 5],
+            'edit_change': [0.5, 0.5, 0.01, 0.01, 0.01],
+        })
+        result = detect_sequence_plateau(seq_df, tau=0.05, window=3)
+        assert result == 5
+        assert result != 3  # not the window's first iteration
+
+    def test_per_sequence_then_aggregate_differs_from_pooled_then_detect(self):
+        """Two sequences in the same group: one always-high (never
+        plateaus), one always-low (plateaus immediately). Per-sequence
+        detection then aggregation must find 1/2 plateaued. A pooled/
+        averaged-trajectory-then-detect approach would instead average the
+        two into a mid-range curve that never dips below tau, giving 0/2 --
+        this test proves the implementation is NOT doing that."""
+        df = pd.DataFrame({
+            'iteration': [1, 2, 3, 4, 5] * 2,
+            'edit_change': [0.5, 0.5, 0.5, 0.5, 0.5] + [0.001, 0.001, 0.001, 0.001, 0.001],
+            'sequence_id': ['high'] * 5 + ['low'] * 5,
+            'model': ['m'] * 10,
+            'condition': ['grounded'] * 10,
+        })
+        result = analyze_mirror_loop_plateau(df, tau=0.05, window=3)
+        stats = result['group_summary'][('m', 'grounded')]
+
+        assert stats['n_sequences'] == 2
+        assert stats['n_plateaued'] == 1
+        assert abs(stats['plateau_rate'] - 0.5) < 1e-9
+
+        # Pooled mean at every iteration = (0.5 + 0.001) / 2 = 0.2505,
+        # far above tau -- a pooled-then-detect approach would find 0/2.
+        pooled_mean = (0.5 + 0.001) / 2
+        assert pooled_mean > 0.05
 
 
 class TestSemanticCompression:
@@ -148,6 +252,98 @@ class TestSessionContamination:
         result = detect_contamination(clean_text, min_keyword_matches=2)
 
         assert result['contaminated'] == False
+
+
+class TestViolationStateStructuredRuleC:
+    """
+    Tests for the canonical, structured-field-based Violation State
+    collapsing rule (Rule C): success-anywhere-wins, otherwise
+    chronologically-last-outcome. These are unit tests of the pure
+    collapsing/aggregation functions, independent of CrossStudyAnalysis.
+    """
+
+    def test_collapse_success_anywhere_wins_not_last_row(self):
+        """
+        Rule C is NOT a 'last row wins' shortcut: an eventual
+        image_success must win even when a chronologically LATER row in
+        the same (conversation_id, prompt_id) group is a different,
+        non-success outcome.
+        """
+        df = pd.DataFrame({
+            'conversation_id': ['c1', 'c1', 'c1'],
+            'condition': ['contaminated', 'contaminated', 'contaminated'],
+            'turn_number': [1, 2, 3],
+            'prompt_id': ['I1_KITCHEN', 'I1_KITCHEN', 'I1_KITCHEN'],
+            'response_type': ['rate_limit', 'image_success', 'policy_refusal'],
+        })
+
+        collapsed = collapse_violation_state_prompts(df)
+
+        assert len(collapsed) == 1
+        assert collapsed.iloc[0]['response_type'] == 'image_success'
+
+    def test_collapse_no_success_uses_chronologically_last_outcome(self):
+        """When no image_success exists in the group, the collapsed
+        outcome is the chronologically last response_type (ordered by
+        turn_number, not by row order in the input)."""
+        df = pd.DataFrame({
+            'conversation_id': ['c1', 'c1'],
+            'condition': ['contaminated', 'contaminated'],
+            # Deliberately out of chronological order in the input rows
+            'turn_number': [5, 3],
+            'prompt_id': ['I1_KITCHEN', 'I1_KITCHEN'],
+            'response_type': ['policy_refusal', 'rate_limit'],
+        })
+
+        collapsed = collapse_violation_state_prompts(df)
+
+        assert len(collapsed) == 1
+        # turn_number=5 (policy_refusal) is chronologically last, even
+        # though it appears first in the input DataFrame
+        assert collapsed.iloc[0]['response_type'] == 'policy_refusal'
+
+    def test_terminal_rate_limit_preserved_raw_not_relabeled(self):
+        """A terminal, never-retried rate_limit must stay 'rate_limit' in
+        raw_structured_outcomes, and must be counted in 'refused' only in
+        published_aggregate — never relabeled as policy_refusal."""
+        df = pd.DataFrame({
+            'conversation_id': ['c1', 'c1', 'c1', 'c1'],
+            'condition': ['contaminated'] * 4,
+            'turn_number': [1, 2, 3, 4],
+            'prompt_id': ['I1_KITCHEN', 'I2_BEDROOM', 'I3_ABSTRACT', 'I4_COFFEE'],
+            # I1_KITCHEN: single unresolved rate_limit, never retried
+            'response_type': ['rate_limit', 'policy_refusal', 'policy_refusal', 'policy_refusal'],
+        })
+
+        result = analyze_violation_state_structured(df)
+        raw = result['raw_structured_outcomes']['contaminated']
+        published = result['published_aggregate']['contaminated']
+
+        # RAW layer: rate_limit preserved distinctly, never becomes policy_refusal
+        assert raw['counts'].get('rate_limit') == 1
+        assert raw['counts'].get('policy_refusal') == 3
+        assert raw['n'] == 4
+
+        # PUBLISHED layer: terminal rate_limit folded into refused/failure
+        assert published['refused'] == 4  # 1 rate_limit + 3 policy_refusal
+        assert published['n'] == 4
+        assert published['refusal_rate'] == 1.0
+
+    def test_trigger_and_clean_recreation_excluded(self):
+        """TRIGGER and CLEAN_RECREATION prompts must not appear in the
+        headline benign-image denominator."""
+        df = pd.DataFrame({
+            'conversation_id': ['c1', 'c1', 'c1'],
+            'condition': ['contaminated'] * 3,
+            'turn_number': [1, 2, 3],
+            'prompt_id': ['TRIGGER', 'CLEAN_RECREATION', 'I1_KITCHEN'],
+            'response_type': ['policy_refusal', 'policy_refusal', 'image_success'],
+        })
+
+        collapsed = collapse_violation_state_prompts(df)
+
+        assert len(collapsed) == 1
+        assert collapsed.iloc[0]['prompt_id'] == 'I1_KITCHEN'
 
 
 def test_imports():

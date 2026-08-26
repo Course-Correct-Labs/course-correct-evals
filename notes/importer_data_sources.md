@@ -80,6 +80,15 @@ Documentation of data file expectations for each CCL study importer.
 
 ## Echo Chamber Zero Study
 
+> **⚠ SUPERSEDED.** Echo Chamber Zero has been decoupled from the canonical
+> Observatory evaluation set (canonical studies are now Mirror Loop, Recursive
+> Confabulation, and Violation State only). The correct metric definitions are
+> **GR = Groundedness Ratio, SRI = Synthetic Recurrence Index, RE = Referential
+> Entropy** — this study is a percolation simulation on a provenance network,
+> not a multi-agent belief-radicalization study. The importer/column
+> documentation below is preserved as a historical record; the importer
+> itself is retained as noncanonical/opt-in code (see `README.md`).
+
 **Importer Class**: `EchoChamberImporter`
 **Expected File**: `simulation_results.csv`
 **GitHub Repository**: `Course-Correct-Labs/echo-chamber-zero`
