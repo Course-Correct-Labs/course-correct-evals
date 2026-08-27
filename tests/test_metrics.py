@@ -175,6 +175,132 @@ class TestMirrorLoopPlateau:
         assert pooled_mean > 0.05
 
 
+class TestCanonicalImportDecoupledFromLevenshtein:
+    """
+    Regression coverage for the Fresh-Colab Levenshtein import defect: a
+    real Colab session failed with `ModuleNotFoundError: No module named
+    'Levenshtein'` the instant `course_correct_evals` was imported, even
+    though no canonical Observatory analysis path calls
+    delta_i_edit_distance() (the only function that actually needs
+    Levenshtein -- a noncanonical/legacy utility). The fix moved
+    `import Levenshtein` from module scope in information_change.py into
+    delta_i_edit_distance()'s own body.
+
+    These tests genuinely block Levenshtein via a sys.meta_path finder
+    installed in an isolated subprocess -- NOT by deleting it from
+    sys.modules, which would not stop it from being re-found on disk.
+    They must FAIL against the pre-fix module-scope-import implementation
+    and PASS against the repaired lazy-import implementation.
+    """
+
+    _BLOCKER_PRELUDE = """
+import sys
+
+class _BlockLevenshtein:
+    # find_spec (not the legacy find_module/load_module pair, which
+    # modern CPython's import system no longer consults) is the current
+    # sys.meta_path finder protocol.
+    def find_spec(self, fullname, path, target=None):
+        if fullname == 'Levenshtein' or fullname.startswith('Levenshtein.'):
+            raise ModuleNotFoundError(f"No module named {fullname!r} (blocked for test)")
+        return None
+
+sys.meta_path.insert(0, _BlockLevenshtein())
+"""
+
+    @staticmethod
+    def _run(script: str):
+        import subprocess, sys
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True, timeout=60,
+        )
+        return result
+
+    def test_top_level_import_succeeds_with_levenshtein_blocked(self):
+        """import course_correct_evals must not require Levenshtein.
+        This is the exact statement that failed in the real Colab
+        artifact."""
+        result = self._run(self._BLOCKER_PRELUDE + """
+import course_correct_evals
+print("OK")
+""")
+        assert result.returncode == 0, (
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "OK" in result.stdout
+
+    def test_cross_study_analysis_import_succeeds_with_levenshtein_blocked(self):
+        """from course_correct_evals import CrossStudyAnalysis must not
+        require Levenshtein."""
+        result = self._run(self._BLOCKER_PRELUDE + """
+from course_correct_evals import CrossStudyAnalysis
+print("OK")
+""")
+        assert result.returncode == 0, (
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "OK" in result.stdout
+
+    def test_flagship_notebook_canonical_imports_succeed_with_levenshtein_blocked(self):
+        """The exact import statements the flagship notebook's setup
+        cell relies on must all succeed without Levenshtein."""
+        result = self._run(self._BLOCKER_PRELUDE + """
+from course_correct_evals import (
+    MirrorLoopImporter,
+    ConfabulationImporter,
+    ViolationStateImporter,
+    EchoChamberImporter,
+    CrossStudyAnalysis,
+)
+from course_correct_evals.analysis.viz import (
+    plot_four_panel_comparison,
+    plot_leaderboard,
+    plot_mirror_loop_detail,
+)
+from course_correct_evals.reports import export_csv_results, export_pdf_report
+print("OK")
+""")
+        assert result.returncode == 0, (
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "OK" in result.stdout
+
+    def test_delta_i_edit_distance_fails_at_call_boundary_not_import_time_when_blocked(self):
+        """When Levenshtein is genuinely unavailable, package import must
+        succeed, and the failure must be deferred to the point where the
+        noncanonical utility is actually called -- not invented as a
+        silent fallback metric."""
+        result = self._run(self._BLOCKER_PRELUDE + """
+from course_correct_evals.metrics import delta_i_edit_distance
+print("IMPORT_OK")
+try:
+    delta_i_edit_distance("hello world", "goodbye world")
+    print("UNEXPECTED_SUCCESS")
+except ModuleNotFoundError:
+    print("CALL_BOUNDARY_FAILURE_AS_EXPECTED")
+""")
+        assert result.returncode == 0, (
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        assert "IMPORT_OK" in result.stdout
+        assert "CALL_BOUNDARY_FAILURE_AS_EXPECTED" in result.stdout
+        assert "UNEXPECTED_SUCCESS" not in result.stdout
+
+    def test_delta_i_edit_distance_unchanged_when_levenshtein_available(self):
+        """No regression to existing behavior when Levenshtein IS
+        installed (the normal case) -- same values as before the fix."""
+        from course_correct_evals.metrics import delta_i_edit_distance
+
+        text = "The quick brown fox jumps over the lazy dog"
+        assert delta_i_edit_distance(text, text) == 0.0
+        assert delta_i_edit_distance("", "") == 0.0
+
+        di = delta_i_edit_distance("Hello world", "Goodbye world")
+        assert di > 0.0
+        assert di <= 1.0
+
+
 class TestSemanticCompression:
     """Test semantic compression metrics"""
 

@@ -8,7 +8,6 @@ Used primarily for the Mirror Loop study.
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import pandas as pd
-import Levenshtein
 import warnings
 
 
@@ -26,6 +25,12 @@ def delta_i_edit_distance(text1: str, text2: str, normalize: bool = True) -> flo
     """
     if not text1 or not text2:
         return 0.0 if (not text1 and not text2) else 1.0
+
+    # Imported here, not at module scope: this is the only function in the
+    # package that needs Levenshtein, and it is a noncanonical/legacy
+    # utility (see module docstring below) -- canonical Observatory import
+    # must not require this optional dependency.
+    import Levenshtein
 
     distance = Levenshtein.distance(text1, text2)
 
